@@ -43,211 +43,644 @@
 
 # PART 0: Understanding AS-REP Roasting from Zero {#part-0-fundamentals}
 
-**If you haven't read the Kerberoasting walkthrough (02), start there first. This builds on those concepts.**
+> **🎯 THE BIG IDEA:**
+>
+> Remember Kerberoasting? You needed domain credentials to attack service accounts.
+>
+> **AS-REP Roasting is different - you need ZERO credentials!**
+>
+> Just usernames. That's it. No password required.
+>
+> This is the attack you do on Day 1 of a pentest before you have any access.
 
 ---
 
-## 0.1: Quick Recap - What Do We Know About Kerberos?
-
-From the Kerberoasting walkthrough, you learned:
-
-| Concept | What It Is |
-|---------|-----------|
-| **KDC** | Service on Domain Controller that issues tickets |
-| **TGT** | "Day pass" proving you logged in |
-| **TGS** | "Service ticket" for accessing a specific service |
-| **Kerberoasting** | Crack TGS tickets to get service account passwords |
-
-**Now we're learning AS-REP Roasting - a DIFFERENT attack on a DIFFERENT part of Kerberos.**
+**⚠️ PREREQUISITE:** If you haven't read the Kerberoasting walkthrough (02), **start there first**. This builds on those concepts.
 
 ---
 
-## 0.2: The Key Difference - Where in the Flow?
+## 0.1: Quick Recap - What We Learned from Kerberoasting
+
+From the Kerberoasting walkthrough, you know:
 
 ```
-KERBEROS AUTHENTICATION FLOW:
+KERBEROS REFRESHER:
 ────────────────────────────────────────────────────────────────
 
-STEP 1: You log in, request a TGT
-        ┌────────────────────────────────────────────────┐
-        │  YOU --> KDC: "I'm vamsi, give me a TGT"       │
-        │  KDC --> YOU: "Here's your TGT" (AS-REP)       │
-        │                                                 │
-        │  THIS IS WHERE AS-REP ROASTING ATTACKS!        │  <-- AS-REP
-        └────────────────────────────────────────────────┘
-
-STEP 2: You request a service ticket using your TGT
-        ┌────────────────────────────────────────────────┐
-        │  YOU --> KDC: "I have TGT, want SQL access"    │
-        │  KDC --> YOU: "Here's SQL service ticket"      │
-        │                                                 │
-        │  THIS IS WHERE KERBEROASTING ATTACKS!          │  <-- TGS-REP
-        └────────────────────────────────────────────────┘
-
-STEP 3: You access the service with the ticket
+Component   What It Is
+─────────   ──────────
+KDC         Service on Domain Controller that issues tickets
+TGT         "Day pass" proving you logged into the domain
+TGS         "Service ticket" for accessing specific services
+Kerberoast  Crack TGS tickets to get service passwords
 ```
 
-**The difference:**
-- **Kerberoasting** attacks STEP 2 (TGS-REP) - needs a TGT first, meaning you need credentials
-- **AS-REP Roasting** attacks STEP 1 (AS-REP) - happens BEFORE you have a TGT, NO credentials needed!
+**Now we're learning AS-REP Roasting - attacking a DIFFERENT part of Kerberos.**
 
 ---
 
-## 0.3: What is Pre-Authentication? (Critical to Understand)
+## 0.2: Where in the Flow? (The Critical Difference)
 
-**Pre-authentication is a security check that happens BEFORE the KDC gives you a TGT.**
+Let me show you EXACTLY where each attack happens:
 
 ```
-NORMAL LOGIN (WITH PRE-AUTHENTICATION):
+THE COMPLETE KERBEROS LOGIN FLOW:
 ────────────────────────────────────────────────────────────────
 
-YOU                                          KDC
- │                                            │
- │  "I'm vamsi, I want a TGT"                 │
- │  ──────────────────────────────────────>   │
- │  + Here's the current timestamp            │
- │  + ENCRYPTED with my password hash         │
- │                                            │
- │                                            │ KDC checks:
- │                                            │ 1. Look up vamsi's password hash
- │                                            │ 2. Try to decrypt the timestamp
- │                                            │ 3. If decryption works → password is correct!
- │                                            │ 4. If timestamp is within 5 minutes → valid!
- │                                            │
- │  "OK, here's your TGT"                     │
- │  <──────────────────────────────────────   │
+                YOU                         KDC
+           (vamsi.krishna)              (DC01)
+
+STEP 1: Login - Request TGT
+────────────────────────────
+    │                                  │
+    │  "I'm vamsi, give me a TGT"      │
+    │  + Encrypted proof I know        │
+    │    my password                   │
+    │ ────────────────────────────────>│
+    │                                  │
+    │                                  │ Verify password
+    │                                  │ Create TGT
+    │                                  │
+    │  "Here's your TGT" (AS-REP)      │
+    │ <────────────────────────────────│
+    │                                  │
+    
+    ┌──────────────────────────────────────────────┐
+    │  ⚡ AS-REP ROASTING ATTACKS HERE!            │
+    │  We trick KDC into giving us AS-REP          │
+    │  WITHOUT proving we know the password!       │
+    └──────────────────────────────────────────────┘
 
 
-The key security feature:
-YOU MUST PROVE YOU KNOW THE PASSWORD BEFORE GETTING ANYTHING!
+STEP 2: Request Service Ticket
+───────────────────────────────
+    │                                  │
+    │  "I have TGT, want SQL access"   │
+    │ ────────────────────────────────>│
+    │                                  │
+    │  "Here's SQL ticket" (TGS-REP)   │
+    │ <────────────────────────────────│
+    │                                  │
+    
+    ┌──────────────────────────────────────────────┐
+    │  ⚡ KERBEROASTING ATTACKS HERE!               │
+    │  We crack the TGS ticket                     │
+    │  (but we needed a TGT first!)                │
+    └──────────────────────────────────────────────┘
+
+
+STEP 3: Access SQL Server
+──────────────────────────
+    │                                  
+    │  "Here's my ticket"     
+    │ ──────────────────────────> SQL Server
 ```
 
-**Why does this matter?**
-
-Without pre-authentication, anyone could say "I'm vamsi, give me a TGT" and get encrypted data containing password-related material!
+**The KEY difference:**
+- **Kerberoasting:** Attacks STEP 2 → Needs TGT → Needs credentials → Any domain user can do it
+- **AS-REP Roasting:** Attacks STEP 1 → No TGT needed → NO credentials → Anyone can try it!
 
 ---
 
-## 0.4: What Happens WITHOUT Pre-Authentication?
+## 0.3: What is Pre-Authentication? (The Airport Security Analogy)
 
-**Some accounts have pre-authentication DISABLED. This is the vulnerability.**
+**Pre-authentication = Proving your identity BEFORE you get anything.**
+
+Let me explain with a real-world scenario you've experienced:
 
 ```
-LOGIN WITHOUT PRE-AUTHENTICATION (VULNERABLE!):
+🛫 AIRPORT SECURITY ANALOGY:
 ────────────────────────────────────────────────────────────────
 
-ATTACKER (pretending to be harsha)            KDC
- │                                            │
- │  "I'm harsha, I want a TGT"                │
- │  ──────────────────────────────────────>   │
- │  (NO encrypted timestamp!)                 │
- │  (NO proof I'm really harsha!)             │
- │                                            │
- │                                            │ KDC checks:
- │                                            │ 1. Look up harsha
- │                                            │ 2. Check: is pre-auth required?
- │                                            │ 3. harsha has DONT_REQUIRE_PREAUTH = YES
- │                                            │ 4. Skip verification! Give TGT anyway!
- │                                            │
- │  "OK, here's your TGT"                     │
- │  <──────────────────────────────────────   │
- │                                            │
- │  The response (AS-REP) contains:           │
- │  - TGT (encrypted with krbtgt hash)        │
- │  - Session key (encrypted with HARSHA's    │
- │    password hash!) ← WE CAN CRACK THIS!    │
+NORMAL AIRPORT (With Security - Like Pre-Auth Enabled):
+────────────────────────────────────────────────────────
+
+You arrive at airport:
+1. Go to security checkpoint
+2. Show boarding pass + ID (PROVE who you are)
+3. Security verifies your ID matches
+4. ONLY THEN you get through to gates
+5. Can board your flight
+
+Security Process:
+┌─────────────────────────────────────────────┐
+│  YOU → Security: "I'm Vamsi Krishna"        │
+│         + Show ID card (proof)              │
+│                                             │
+│  Security checks:                           │
+│  - Does ID photo match your face?           │
+│  - Is name on ID same as boarding pass?     │
+│                                             │
+│  IF MATCH: "Proceed to gate" ✅             │
+│  IF NO MATCH: "Access denied!" ❌           │
+└─────────────────────────────────────────────┘
 
 
-THE VULNERABILITY:
-The KDC gave us data encrypted with harsha's password.
-We can try passwords offline until one decrypts it correctly!
+VIP LANE (No Security - Like Pre-Auth Disabled):
+─────────────────────────────────────────────────
+
+Imagine airport has a "VIP lane" that SKIPS security:
+1. You just walk up
+2. Say "I'm a VIP"
+3. Security waves you through
+4. NO ID check!
+5. Get to gates immediately
+
+The Problem:
+┌─────────────────────────────────────────────┐
+│  ANYONE can claim to be VIP!                │
+│                                             │
+│  Attacker → VIP Lane: "I'm Vamsi Krishna"   │
+│              (NO proof needed!)             │
+│                                             │
+│  Security: "OK, go ahead!" ✅               │
+│  (Doesn't even check!)                      │
+│                                             │
+│  Attacker is now inside airport!            │
+│  Can steal luggage, board any flight, etc.  │
+└─────────────────────────────────────────────┘
+```
+
+**Now translate this to Kerberos:**
+
+| Airport | Kerberos | What Happens |
+|---------|----------|--------------|
+| Security checkpoint | Pre-authentication | Verify you before giving access |
+| Showing ID | Encrypted timestamp | Proves you know password |
+| Getting to gate | Getting TGT | Access to request services |
+| VIP lane (no security) | DONT_REQUIRE_PREAUTH | Skip verification! |
+| Attacker claiming VIP | AS-REP Roasting | Get TGT without password! |
+
+---
+
+## 0.4: Normal Login WITH Pre-Authentication (Secure)
+
+**This is how Kerberos SHOULD work:**
+
+```
+SECURE LOGIN FLOW:
+────────────────────────────────────────────────────────────────
+
+        YOU                                  KDC (DC01)
+   (vamsi.krishna)                      (Domain Controller)
+        │                                      │
+        │                                      │
+You type your password:                        │
+"Password123!"                                 │
+        │                                      │
+Computer calculates:                           │
+hash = NTLM("Password123!")                    │
+     = 8846f7eaee8fb117...                     │
+        │                                      │
+        │  ──── AS-REQ (Login Request) ────>  │
+        │                                      │
+        │  Contains:                           │
+        │  1. Username: vamsi.krishna          │
+        │  2. Current time: 2024-12-29 3:30PM  │
+        │  3. Time encrypted with YOUR hash    │
+        │     (proves you know password!)      │
+        │                                      │
+        │                                    KDC checks:
+        │                                    ───────────
+        │                                    1. Look up vamsi.krishna
+        │                                       → Found in AD ✅
+        │                                    
+        │                                    2. Get vamsi's password hash
+        │                                       → From NTDS.dit database
+        │                                       → hash = 8846f7eaee8fb...
+        │                                    
+        │                                    3. Try to decrypt timestamp
+        │                                       → Using vamsi's hash
+        │                                       → Decrypt succeeds! ✅
+        │                                    
+        │                                    4. Check timestamp is recent
+        │                                       → 3:30 PM, current time
+        │                                       → Within 5 minutes ✅
+        │                                    
+        │                                    5. All checks passed!
+        │                                       → Create TGT
+        │                                       → User is authenticated
+        │                                      │
+        │  <──── AS-REP (Login Response) ────  │
+        │                                      │
+        │  Contains:                           │
+        │  1. TGT (your "day pass")            │
+        │  2. Session key                      │
+        │                                      │
+✅ LOGIN SUCCESSFUL!                           │
+You now have a TGT                             │
+```
+
+**The security:**
+- You MUST prove you know the password
+- KDC verifies by decrypting your timestamp
+- No password = No TGT = No access
+
+**This is the normal, secure behavior!**
+
+---
+
+## 0.5: Login WITHOUT Pre-Authentication (VULNERABLE!)
+
+**Now imagine a user has pre-authentication DISABLED:**
+
+```
+VULNERABLE LOGIN FLOW (AS-REP ROASTING):
+────────────────────────────────────────────────────────────────
+
+   ATTACKER                              KDC (DC01)
+(Doesn't know password!)            (Domain Controller)
+        │                                      │
+        │                                      │
+Attacker thinks:                               │
+"I don't know harsha's password,               │
+ but let me try requesting TGT anyway..."      │
+        │                                      │
+        │  ──── AS-REQ (Login Request) ────>  │
+        │                                      │
+        │  Contains:                           │
+        │  1. Username: harsha.vardhan         │
+        │  2. NO encrypted timestamp!          │
+        │  3. NO proof of password!            │
+        │  4. Just: "Give me a TGT"            │
+        │                                      │
+        │                                    KDC checks:
+        │                                    ───────────
+        │                                    1. Look up harsha.vardhan
+        │                                       → Found in AD ✅
+        │                                    
+        │                                    2. Check: Pre-auth required?
+        │                                       → Check DoesNotRequirePreAuth
+        │                                       → harsha has it SET! ⚠️
+        │                                    
+        │                                    3. Skip verification!
+        │                                       → No password check
+        │                                       → No timestamp check
+        │                                       → Just give TGT anyway!
+        │                                    
+        │                                    4. Create AS-REP response
+        │                                       → Contains encrypted data
+        │                                       → Encrypted with HARSHA's
+        │                                         password! 🔥
+        │                                      │
+        │  <──── AS-REP (Login Response) ────  │
+        │                                      │
+        │  Contains:                           │
+        │  1. TGT (encrypted with krbtgt)      │
+        │  2. Session key (encrypted with      │
+        │     HARSHA'S password!) ← JACKPOT!   │
+        │                                      │
+⚠️ ATTACKER GOT ENCRYPTED DATA!                │
+Can now crack harsha's password offline!       │
+```
+
+**THE VULNERABILITY EXPLAINED:**
+
+```
+WHAT ATTACKER GOT:
+────────────────────────────────────────────────────────────────
+
+The AS-REP contains:
+┌─────────────────────────────────────────────────────────────┐
+│                                                              │
+│  Part 1: TGT                                                │
+│  ├── Encrypted with KRBTGT password                         │
+│  └── Can't crack this (KRBTGT = 128+ random chars)          │
+│                                                              │
+│  Part 2: Session Key ← THIS IS WHAT WE CRACK! 🎯            │
+│  ├── Encrypted with HARSHA's password                       │
+│  ├── We can try passwords offline:                          │
+│  │   Try "password123" → Decrypt → ❌ Garbage               │
+│  │   Try "Customer2024!" → Decrypt → ✅ Valid data!         │
+│  └── PASSWORD FOUND: Customer2024!                          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why this is CRITICAL:**
+1. ❌ No credentials needed to request
+2. ❌ KDC gives encrypted data without verification
+3. ✅ Attacker can crack offline (unlimited attempts!)
+4. ✅ No lockout policy (not using wrong passwords)
+5. ✅ Get user's actual password (not just access)
+
+---
+
+## 0.6: Why Would Anyone Disable Pre-Authentication?
+
+**Good question! This seems crazy, right?**
+
+Here are the real-world reasons this dangerous setting exists:
+
+```
+LEGITIMATE REASONS (Historical):
+────────────────────────────────────────────────────────────────
+
+1. LEGACY KERBEROS CLIENTS (1990s-2000s)
+   ─────────────────────────────────────
+   - Unix/Linux Kerberos 4 didn't support pre-auth
+   - Old Java applications
+   - Ancient Unix systems that can't be upgraded
+   
+   Example: "Our payroll system from 1998 breaks with pre-auth"
+
+2. APPLICATION COMPATIBILITY
+   ──────────────────────────
+   - Vendor says: "Disable pre-auth for our app to work"
+   - Legacy banking software
+   - Old SAP integrations
+   
+   Example: "Oracle told us to disable it during install"
+
+3. TROUBLESHOOTING GONE WRONG
+   ──────────────────────────
+   - Admin debugging auth issues
+   - Temporarily disables pre-auth
+   - Forgets to re-enable it
+   - Account works fine → nobody notices the hole
+   
+   Example: "Let me disable this to test... (3 years later) oops"
+
+4. MIGRATION FROM NON-AD SYSTEMS
+   ──────────────────────────────
+   - Migrating from Novell, Unix, etc.
+   - Some accounts get misconfigured
+   - Setting gets carried forward
+   
+   Example: "We migrated from NIS in 2005, never cleaned up"
+```
+
+**Why we STILL find it in 2024:**
+
+```
+THE REALITY:
+────────────────────────────────────────────────────────────────
+
+1. HIDDEN IN GUI
+   ──────────────
+   - Not prominently shown in AD Users and Computers
+   - Buried in "Account" tab
+   - Most admins don't even check it
+
+2. NO DEFAULT WARNINGS
+   ───────────────────
+   - Windows doesn't alert when enabled
+   - No audit logs by default
+   - Silent security hole
+
+3. LACK OF AWARENESS
+   ─────────────────
+   - Admins don't know the risk
+   - "If account works, don't touch it"
+   - Security team doesn't audit for it
+
+4. LEGACY DEBT
+   ───────────
+   - Accounts from Windows 2000 era
+   - "We've always had it this way"
+   - Fear of breaking production
 ```
 
 ---
 
-## 0.5: Why Would Anyone Disable Pre-Authentication?
+## 0.7: AS-REP vs Kerberoasting - Side-by-Side Comparison
 
-**Good question! There are a few reasons this dangerous setting exists:**
-
-| Reason | Explanation |
-|--------|-------------|
-| **Legacy compatibility** | Very old Kerberos implementations (1990s) didn't support pre-auth |
-| **Specific applications** | Some legacy apps couldn't handle pre-auth |
-| **Misconfiguration** | Admin checked a box without understanding |
-| **Troubleshooting** | Temporarily disabled during debugging, never re-enabled |
-
-**The problem:** Once set, it's often forgotten. The account works fine - no one notices the security hole.
-
----
-
-## 0.6: AS-REP vs Kerberoasting - Simple Comparison
+**Let me show you the differences clearly:**
 
 | Aspect | AS-REP Roasting | Kerberoasting |
 |--------|-----------------|---------------|
-| **What you attack** | The initial login response (AS-REP) | Service ticket (TGS-REP) |
-| **Do you need credentials?** | **NO!** Just usernames | Yes, any domain user |
-| **What accounts are vulnerable?** | Users with DONT_REQUIRE_PREAUTH | Users with SPNs (service accounts) |
-| **How common are targets?** | Rare (1-5% of accounts) | Common (many service accounts) |
-| **What password do you crack?** | The USER's password | The SERVICE ACCOUNT's password |
-| **Hashcat mode** | 18200 | 13100 |
+| **What you attack** | Initial login (AS-REP) | Service ticket (TGS-REP) |
+| **When in flow** | STEP 1 (before TGT) | STEP 2 (after TGT) |
+| **Credentials needed** | **NONE!** Just usernames | Yes, any domain user |
+| **What's vulnerable** | Users with DONT_REQUIRE_PREAUTH | Users with SPNs (service accounts) |
+| **How common** | Rare (1-5% of accounts) | Common (many service accounts) |
+| **Password you crack** | **USER's** password | SERVICE ACCOUNT's password |
+| **Hash format** | $krb5asrep$23$... | $krb5tgs$23$... |
+| **Hashcat mode** | **18200** | 13100 |
+| **Event ID logged** | 4768 (TGT request) | 4769 (Service ticket) |
+| **Best for** | Initial access (Day 1) | Post-credential access |
 
-**Why AS-REP Roasting is special:**
-
-You can do it during INITIAL RECON before you have ANY access to the domain!
-
----
-
-## 0.7: The Attack Flow - Super Simple Version
+**Why AS-REP is special:**
 
 ```
-AS-REP ROASTING - 4 STEPS:
+ATTACK TIMELINE:
 ────────────────────────────────────────────────────────────────
 
-STEP 1: Get a list of usernames
-        ├── From LinkedIn, company website, email patterns
-        ├── From previous breaches
-        └── From username enumeration tools
+Day 1 of Pentest - You have NOTHING:
+════════════════════════════════════
+  ✅ AS-REP ROASTING ← You can do this NOW!
+  ❌ Kerberoasting ← Need credentials first
+  ❌ BloodHound ← Need credentials
+  ❌ Lateral Movement ← Need credentials
 
-STEP 2: Send AS-REQ for each username (no password needed)
-        ├── KDC response for normal user: "Pre-auth required"
-        └── KDC response for vulnerable user: "Here's your AS-REP"
+After AS-REP gives you credentials:
+═══════════════════════════════════
+  ✅ Kerberoasting ← Now you can!
+  ✅ BloodHound ← Now you can!
+  ✅ Everything else ← Now open!
+```
 
-STEP 3: Take the AS-REP and crack it offline
-        ├── The AS-REP contains data encrypted with user's password
-        └── Try passwords until one decrypts it correctly
+**This is why AS-REP Roasting is the "Initial Access King"!**
 
-STEP 4: You now have the user's password!
-        └── Use it for further attacks (Kerberoasting, lateral movement, etc.)
+---
+
+## 0.8: The 4-Step Attack Flow (Super Simple Version)
+
+```
+AS-REP ROASTING - THE COMPLETE PROCESS:
+────────────────────────────────────────────────────────────────
+
+STEP 1: Get Usernames
+─────────────────────
+Sources:
+├── LinkedIn (company employees)
+├── Company website "About Us" page  
+├── Email patterns (first.last@company.com)
+├── Previous data breaches
+└── Username enumeration tools (Kerbrute)
+
+Example list:
+  vamsi.krishna
+  harsha.vardhan
+  pranavi
+  kiran.kumar
+  lakshmi.devi
+
+
+STEP 2: Send AS-REQ for Each User
+──────────────────────────────────
+For each username, send login request WITHOUT password:
+
+  → vamsi.krishna: "Pre-auth required" ❌
+  → harsha.vardhan: "Here's AS-REP! " ✅ VULNERABLE!
+  → pranavi: "Here's AS-REP!" ✅ VULNERABLE!
+  → kiran.kumar: "Here's AS-REP!" ✅ VULNERABLE!
+  → lakshmi.devi: "Pre-auth required" ❌
+
+We found 3 vulnerable accounts!
+
+
+STEP 3: Crack the AS-REP Hashes Offline
+────────────────────────────────────────
+Save hashes to file:
+  $krb5asrep$23$harsha.vardhan@ORSUBANK.LOCAL:a1b2c3...
+  $krb5asrep$23$pranavi@ORSUBANK.LOCAL:d4e5f6...
+  $krb5asrep$23$kiran.kumar@ORSUBANK.LOCAL:g7h8i9...
+
+Run Hashcat:
+  hashcat -m 18200 hashes.txt rockyou.txt
+
+Results:
+  harsha.vardhan: Customer2024! ✅ CRACKED!
+  pranavi: Branch123! ✅ CRACKED!
+  kiran.kumar: Finance1! ✅ CRACKED!
+
+
+STEP 4: You Now Have Domain Credentials!
+─────────────────────────────────────────
+Username: harsha.vardhan
+Password: Customer2024!
+
+What can you do now?
+├── Login to workstations
+├── Access file shares  
+├── Run BloodHound for privilege paths
+├── Kerberoast service accounts
+├── Lateral movement
+└── Check if user is privileged!
 ```
 
 ---
 
-## 0.8: Real-World Value of AS-REP Roasting
+## 0.9: Real-World Attack Scenario
 
-**Scenario: You're on a pentest, day 1, no credentials yet.**
+**Let me paint a picture of how this works in practice:**
 
-1. You scrape LinkedIn for employee names
-2. You generate a username list (first.last format)
-3. You run AS-REP Roasting against the domain controller
-4. One account comes back vulnerable with a hash
-5. You crack it: `Password123!`
-6. **Now you have domain credentials!**
-7. From there: Kerberoasting, BloodHound, lateral movement...
+```
+🎯 PENTEST SCENARIO: ORSUBANK
+────────────────────────────────────────────────────────────────
 
-**This is why AS-REP Roasting is a favorite for initial access!**
+DAY 1 - Morning (9:00 AM):
+──────────────────────────
+You: "I'm pentesting ORSUBANK. No credentials yet."
+
+STEP 1: OSINT (9:00 - 10:00 AM)
+────────────────────────────────
+→ Search LinkedIn: "ORSUBANK employees"
+→ Find 47 employees
+→ Extract names:
+  - Vamsi Krishna (Branch Manager)
+  - Harsha Vardhan (Customer Service)
+  - Pranavi (IT Support)
+  - Kiran Kumar (Finance)
+  - (43 more...)
+
+→ Generate usernames (first.last pattern):
+  vamsi.krishna
+  harsha.vardhan
+  pranavi
+  kiran.kumar
+  ...
+
+STEP 2: AS-REP ROASTING (10:00 - 10:05 AM)
+───────────────────────────────────────────
+→ Run GetNPUsers.py from Kali:
+  GetNPUsers.py orsubank.local/ -usersfile users.txt \
+    -no-pass -dc-ip 192.168.100.10
+
+→ Results:
+  ✅ pranavi → Got AS-REP hash!  
+  ✅ harsha.vardhan → Got AS-REP hash!
+  ✅ kiran.kumar → Got AS-REP hash!
+  ❌ 44 others → Pre-auth required
+
+STEP 3: CRACKING (10:05 - 10:15 AM)
+────────────────────────────────────
+→ Save hashes to file
+→ Run Hashcat with rockyou.txt:
+  hashcat -m 18200 hashes.txt rockyou.txt
+
+→ Results (10 minutes later):
+  pranavi: Branch123! ✅
+  harsha.vardhan: Customer2024! ✅  
+  kiran.kumar: Finance1! ✅
+
+STEP 4: VALIDATION (10:15 AM)
+──────────────────────────────
+→ Test credentials:
+  netexec smb 192.168.100.10 -u harsha.vardhan -p 'Customer2024!'
+  
+  [+] orsubank.local\harsha.vardhan:Customer2024! ✅
+
+→ Check privileges:
+  netexec smb 192.168.100.10 -u harsha.vardhan -p 'Customer2024!' --groups
+  
+  [+] Member of: HelpDesk_Team, IT_Support, Server_Admins
+
+→ Run BloodHound:
+  "harsha.vardhan has path to Domain Admin!" 🎯
+
+
+RESULT BY 10:30 AM:
+═══════════════════
+✅ Domain credentials obtained
+✅ Privilege escalation path identified
+✅ Total time: 1.5 hours
+✅ From ZERO to potential Domain Admin!
+```
+
+**This is why every red team starts with AS-REP Roasting!**
 
 ---
 
-## 0.9: Summary Before Diving Deeper
+## 0.10: Summary - Before Going Deeper
 
-| Concept | What It Is |
-|---------|-----------|
-| **Pre-authentication** | Proof you know password BEFORE getting a TGT |
-| **DONT_REQUIRE_PREAUTH** | Setting that skips this check (dangerous!) |
-| **AS-REP** | The response containing your TGT (and crackable data) |
-| **AS-REP Roasting** | Request AS-REP for users without pre-auth, crack their passwords |
+Make sure you understand these core concepts:
 
-**Now let's go into the technical details...**
+| Concept | Simple Explanation |
+|---------|--------------------|
+| **Pre-authentication** | Security check BEFORE getting a TGT (like showing ID at airport) |
+| **DONT_REQUIRE_PREAUTH** | Setting that skips this check (like VIP lane with no security) |
+| **AS-REP** | The response containing your TGT (includes encrypted session key) |
+| **AS-REP Roasting** | Request AS-REP for users without pre-auth, crack their passwords offline |
+| **No credentials needed!** | Just need valid usernames - that's the power! |
+
+**Quick self-test:**
+
+```
+QUIZ - Answer in your head:
+────────────────────────────────────────────────────────────────
+
+Q1: Do you need domain credentials for AS-REP Roasting?
+    A) Yes, any domain user
+    B) No, just usernames
+    C) Yes, Domain Admin
+    
+    👉 Answer: B - Just usernames!
+
+Q2: What setting makes an account AS-REP Roastable?
+    A) Has an SPN
+    B) DONT_REQUIRE_PREAUTH enabled
+    C) Password never expires
+    
+    👉 Answer: B - DONT_REQUIRE_PREAUTH
+
+Q3: Which Hashcat mode for AS-REP?
+    A) 13100
+    B) 18200
+    C) 19700
+    
+    👉 Answer: B - Mode 18200
+    
+Q4: What password do you crack?
+    A) SERVICE account password
+    B) USER's password
+    C) Domain Admin password
+    
+    👉 Answer: B - The USER's own password
+```
+
+**If you got all 4 correct - you understand AS-REP Roasting! Let's dive deeper...**
 
 ---
 

