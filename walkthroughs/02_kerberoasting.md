@@ -990,44 +990,67 @@ If you have access to a server, Kerberos requests from servers are more normal t
 
 # PART 8: Lab Setup {#part-8-lab-setup}
 
-## 8.1: Running the Kerberoasting Script
+## 8.1: ORSUBANK Kerberoastable Accounts
 
-**On DC01 (Domain Controller):**
+**These accounts were created by running the Enable-Kerberoasting.ps1 script on DC01:**
+
+```
+ORSUBANK KERBEROASTABLE SERVICE ACCOUNTS:
+────────────────────────────────────────────────────────────────
+
+┌────────────────┬──────────────────────────────────┬─────────────────┬──────────────────┐
+│ Account        │ SPN                              │ Password        │ Group Membership │
+├────────────────┼──────────────────────────────────┼─────────────────┼──────────────────┤
+│ sqlservice     │ MSSQLSvc/DC01.orsubank.local:1433│ MYpassword123#  │ ServiceAccounts  │
+│ httpservice    │ HTTP/web.orsubank.local          │ Summer2024!     │ ServiceAccounts  │
+│ iisservice     │ HTTP/app.orsubank.local          │ P@ssw0rd        │ ServiceAccounts  │
+│ backupservice  │ MSSQLSvc/DC01.orsubank.local:1434│ SQLAgent123!    │ ServiceAccounts  │
+│ svc_backup     │ backup/dc01.orsubank.local       │ Backup@2024!    │ DOMAIN ADMINS!   │
+└────────────────┴──────────────────────────────────┴─────────────────┴──────────────────┘
+
+⚠️ HIGH VALUE TARGET: svc_backup is a member of Domain Admins!
+   Cracking this = Complete domain compromise!
+```
+
+## 8.2: Running the Kerberoasting Script
+
+**On DC01 (Domain Controller) - if not already run:**
 
 ```powershell
 # Navigate to scripts
-cd C:\AD-RTO\lab-config\server
+cd C:\Internal-RTO\lab-config\server
 
 # Run the setup script
 .\Enable-Kerberoasting.ps1
+
+# Expected output:
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║         ORSUBANK - ENABLE KERBEROASTING VULNERABILITY            ║
+# ╚══════════════════════════════════════════════════════════════════╝
+# [+] Created: sqlservice
+#     Password: MYpassword123#
+#     SPN: MSSQLSvc/DC01.orsubank.local:1433
+# [+] Created: httpservice
+# ...
 ```
-
-## 8.2: What Gets Created
-
-| Account | SPN | Password | Privileges |
-|---------|-----|----------|------------|
-| svc_sql | MSSQLSvc/sql.orsubank.local:1433 | SqlSvc@2024! | SQL Admins |
-| svc_http | HTTP/web.orsubank.local | HttpSvc@2024! | Web Admins |
-| svc_backup | backup/dc01.orsubank.local | Backup@2024! | **Domain Admins** |
-| svc_iis | HTTP/iis.orsubank.local | IisSvc@2024! | IIS Admins |
-
-**HIGH VALUE TARGET:** svc_backup is in Domain Admins!
 
 ## 8.3: Verifying Setup
 
 ```powershell
 # Check SPNs were created
 Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName,memberOf |
-  Select Name, ServicePrincipalName, @{N='Groups';E={$_.memberOf -replace 'CN=|,.*'}}
+  Select Name, ServicePrincipalName, @{N='Groups';E={($_.memberOf | %{($_ -split ',')[0] -replace 'CN='}) -join '; '}}
 ```
 
-**Expected:**
+**Expected output:**
 ```
-Name        ServicePrincipalName           Groups
-----        --------------------           ------
-svc_sql     MSSQLSvc/sql.orsubank.local... SQL_Admins
-svc_backup  backup/dc01.orsubank.local     Domain Admins
-...
+Name            ServicePrincipalName                   Groups
+----            --------------------                   ------
+sqlservice      MSSQLSvc/DC01.orsubank.local:1433     ServiceAccounts
+httpservice     HTTP/web.orsubank.local                ServiceAccounts
+iisservice      HTTP/app.orsubank.local                ServiceAccounts
+backupservice   MSSQLSvc/DC01.orsubank.local:1434     ServiceAccounts
+svc_backup      backup/dc01.orsubank.local             Domain Admins  ← TARGET!
 ```
 
 ---
