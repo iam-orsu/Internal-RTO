@@ -591,7 +591,7 @@ The choice is saved. After reboots, the script knows this is WS01 and will not a
 - Vulnerable scheduled task (SYSTEM with writable script)
 - PSRemoting, WMI, RDP, admin shares
 - Remote UAC disabled (for Pass-the-Hash)
-- Local admin account (localadmin / LocalAdmin123!)
+- Local admin account (operator / Operator123!)
 - WDigest enabled, LSA Protection off
 - Persistence mechanisms (Run keys, startup folder, WMI subscription)
 - WebClient service for coercion

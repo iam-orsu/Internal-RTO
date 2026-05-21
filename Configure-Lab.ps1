@@ -413,22 +413,34 @@ function Set-LabACE {
         [string]$Label
     )
     try {
-        $acl = Get-Acl "AD:\$TargetDN"
+        $entry = [ADSI]"LDAP://$TargetDN"
+        $entry.get_Options().SecurityMasks = [System.DirectoryServices.SecurityMasks]::Dacl
+        $acl = $entry.psbase.ObjectSecurity
+        
+        $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
         $exists = $false
-        foreach ($ace in $acl.Access) {
-            try {
-                $sidMatch = $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $Rule.IdentityReference.Value
-                if ($sidMatch -and $ace.ActiveDirectoryRights -eq $Rule.ActiveDirectoryRights) {
+        foreach ($ace in $rules) {
+            if ($ace.IdentityReference.Value -eq $Rule.IdentityReference.Value -and 
+                $ace.ActiveDirectoryRights -eq $Rule.ActiveDirectoryRights -and
+                $ace.AccessControlType -eq $Rule.AccessControlType) {
+                
+                # Check ObjectType (GUID) if applicable
+                $guidMatch = $true
+                if ($Rule.ObjectType -ne [System.Guid]::Empty -or $ace.ObjectType -ne [System.Guid]::Empty) {
+                    $guidMatch = ($ace.ObjectType -eq $Rule.ObjectType)
+                }
+                
+                if ($guidMatch) {
                     $exists = $true
                     break
                 }
-            } catch {}
+            }
         }
         if ($exists) {
             Write-Host "    [=] ACE exists: $Label" -ForegroundColor DarkGray
         } else {
             $acl.AddAccessRule($Rule)
-            Set-Acl "AD:\$TargetDN" $acl
+            $entry.psbase.CommitChanges()
             Write-Host "    [+] $Label" -ForegroundColor Green
         }
     } catch {
@@ -591,11 +603,13 @@ if ($Role -eq "DC") {
         }
 
         # Rename
+        $renamed = $false
         if ($env:COMPUTERNAME -ne $DCHostname) {
             Write-Host "`n[*] Renaming to $DCHostname..." -ForegroundColor Yellow
             try {
                 Rename-Computer -NewName $DCHostname -Force -ErrorAction Stop
                 Write-Host "    [+] Rename scheduled (takes effect after reboot)" -ForegroundColor Green
+                $renamed = $true
             } catch {
                 Write-Host "    [!] Rename failed: $($_.Exception.Message)" -ForegroundColor Yellow
             }
@@ -603,21 +617,26 @@ if ($Role -eq "DC") {
             Write-Host "`n[=] Hostname already $DCHostname" -ForegroundColor DarkGray
         }
 
-        Write-Host ""
-        Write-Host "  ================================================================" -ForegroundColor Green
-        Write-Host "   DC STAGE 1/3 COMPLETE" -ForegroundColor Green
-        Write-Host "  ================================================================" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "  Rebooting in 10 seconds..." -ForegroundColor White
-        Write-Host "  After reboot, the script will continue automatically." -ForegroundColor White
-        Write-Host "  If it does not, run:  .\Configure-Lab.ps1" -ForegroundColor Gray
-        Write-Host ""
+        if ($renamed) {
+            Write-Host ""
+            Write-Host "  ================================================================" -ForegroundColor Green
+            Write-Host "   DC STAGE 1/3 COMPLETE" -ForegroundColor Green
+            Write-Host "  ================================================================" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "  Rebooting in 10 seconds..." -ForegroundColor White
+            Write-Host "  After reboot, the script will continue automatically." -ForegroundColor White
+            Write-Host "  If it does not, run:  .\Configure-Lab.ps1" -ForegroundColor Gray
+            Write-Host ""
 
-        Register-LabResume
-        Start-Sleep -Seconds 10
-        Stop-Transcript
-        Restart-Computer -Force
-        exit 0
+            Register-LabResume
+            Start-Sleep -Seconds 10
+            Stop-Transcript
+            Restart-Computer -Force
+            exit 0
+        } else {
+            Write-Host "`n[*] No reboot needed for Stage 1. Moving directly to Stage 2..." -ForegroundColor Yellow
+            $stage = 2
+        }
     }
 
     # ========================================================
@@ -632,14 +651,9 @@ if ($Role -eq "DC") {
         # Already a DC?
         $domainRoleCheck = (Get-CimInstance Win32_ComputerSystem).DomainRole
         if ($domainRoleCheck -in @(4, 5)) {
-            Write-Host "    [=] Already a Domain Controller." -ForegroundColor DarkGray
+            Write-Host "    [=] Already a Domain Controller. Skipping reboot and proceeding to Stage 3." -ForegroundColor Green
             Set-Content -Path $stageFile -Value "3"
-            Register-LabResume
-            Write-Host "    [*] Rebooting to continue with Stage 3..." -ForegroundColor Yellow
-            Start-Sleep -Seconds 5
-            Stop-Transcript
-            Restart-Computer -Force
-            exit 0
+            $stage = 3
         }
 
         # Verify AD DS feature
@@ -811,7 +825,7 @@ if ($Role -eq "DC") {
         Add-ADGroupMember -Identity "Domain Admins" -Members "ammulu.orsu" -ErrorAction SilentlyContinue
         Write-Host "    [+] ammulu.orsu -> Domain Admins" -ForegroundColor Green
 
-        $attackerUser = Get-ADUser "vamsi.krishna"
+        $attackerUser = Get-ADUser -Filter "SamAccountName -eq 'vamsi.krishna'" | Select-Object -First 1
 
         # ---- 3/10: Kerberoasting ----
         Write-Host "`n[3/10] Configuring Kerberoasting targets..." -ForegroundColor Yellow
@@ -863,7 +877,7 @@ if ($Role -eq "DC") {
         Write-Host "`n[5/10] Configuring ACL abuse paths..." -ForegroundColor Yellow
 
         # GenericAll: vamsi.krishna on lakshmi.devi
-        $targetUser = Get-ADUser "lakshmi.devi"
+        $targetUser = Get-ADUser -Filter "SamAccountName -eq 'lakshmi.devi'" | Select-Object -First 1
         $gaRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
             $attackerUser.SID,
             [System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
@@ -879,7 +893,7 @@ if ($Role -eq "DC") {
         }
         Add-ADGroupMember -Identity "Domain Admins" -Members "IT_Admins" -ErrorAction SilentlyContinue
 
-        $itAdmins = Get-ADGroup "IT_Admins"
+        $itAdmins = Get-ADGroup -Filter "Name -eq 'IT_Admins'" | Select-Object -First 1
         $wdRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
             $attackerUser.SID,
             [System.DirectoryServices.ActiveDirectoryRights]::WriteDacl,
@@ -889,8 +903,8 @@ if ($Role -eq "DC") {
             -Label "WriteDACL: vamsi.krishna -> IT_Admins (member of DA)"
 
         # ForceChangePassword: divya on ammulu.orsu
-        $daUser = Get-ADUser "ammulu.orsu"
-        $divyaUser = Get-ADUser "divya"
+        $daUser = Get-ADUser -Filter "SamAccountName -eq 'ammulu.orsu'" | Select-Object -First 1
+        $divyaUser = Get-ADUser -Filter "SamAccountName -eq 'divya'" | Select-Object -First 1
         $fcpGuid = [GUID]"00299570-246d-11d0-a768-00aa006e0529"
         $fcpRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
             $divyaUser.SID,
@@ -902,7 +916,7 @@ if ($Role -eq "DC") {
             -Label "ForceChangePassword: divya -> ammulu.orsu (DA)"
 
         # GenericWrite: vamsi.krishna on sai.kiran
-        $saiKiran = Get-ADUser "sai.kiran"
+        $saiKiran = Get-ADUser -Filter "SamAccountName -eq 'sai.kiran'" | Select-Object -First 1
         $gwRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
             $attackerUser.SID,
             [System.DirectoryServices.ActiveDirectoryRights]::GenericWrite,
@@ -944,7 +958,7 @@ if ($Role -eq "DC") {
         Write-Host "    [+] svc_backup: DA with SPN (Kerberoastable DA)" -ForegroundColor Green
 
         # DCSync rights for WS01$
-        $ws01 = Get-ADComputer "WS01" -ErrorAction SilentlyContinue
+        $ws01 = Get-ADComputer -Filter "Name -eq 'WS01'" -ErrorAction SilentlyContinue
         $skippedWS01Items = @()
         if ($ws01) {
             $domainDN = (Get-ADDomain).DistinguishedName
@@ -1009,12 +1023,12 @@ if ($Role -eq "DC") {
         $enrollGuid = [GUID]"0e10c968-78fb-11d2-90d4-00c04f79dc55"
 
         try { $configNC = (Get-ADRootDSE).configurationNamingContext } catch {}
-        try { $domainUsersSID = (Get-ADGroup "Domain Users").SID } catch {}
+        try { $domainUsersSID = (Get-ADGroup -Filter "Name -eq 'Domain Users'" | Select-Object -First 1).SID } catch {}
 
         $adcsInstalled = (Get-WindowsFeature ADCS-Cert-Authority).Installed
         if (-not $adcsInstalled) {
             Write-Host "    [*] Installing ADCS (takes a few minutes)..." -ForegroundColor Gray
-            $result = Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment -IncludeManagementTools
+            $result = Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment, Web-Windows-Auth -IncludeManagementTools
             if ($result.Success) {
                 Write-Host "    [+] ADCS features installed" -ForegroundColor Green
             } else {
@@ -1051,7 +1065,7 @@ if ($Role -eq "DC") {
             Write-Host "    [*] Configuring ESC1..." -ForegroundColor Gray
             try {
                 $userTemplateDN = "CN=User,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
-                if (-not (Get-ADObject -Identity $userTemplateDN -ErrorAction SilentlyContinue)) {
+                if (-not (Get-ADObject -Filter "DistinguishedName -eq '$userTemplateDN'" -ErrorAction SilentlyContinue)) {
                     Write-Host "    [!] ESC1: User template not found." -ForegroundColor Yellow
                 } else {
                     $templateObj = [ADSI]"LDAP://$userTemplateDN"
@@ -1067,9 +1081,7 @@ if ($Role -eq "DC") {
                             [System.Security.AccessControl.AccessControlType]::Allow,
                             $enrollGuid
                         )
-                        $templateAcl = Get-Acl "AD:\$userTemplateDN"
-                        $templateAcl.AddAccessRule($enrollRule)
-                        Set-Acl "AD:\$userTemplateDN" $templateAcl
+                        Set-LabACE -TargetDN $userTemplateDN -Rule $enrollRule -Label "ESC1: Domain Users enroll on User template"
                     }
                     Write-Host "    [+] ESC1: User template allows SAN, Domain Users can enroll" -ForegroundColor Green
                 }
@@ -1081,16 +1093,15 @@ if ($Role -eq "DC") {
             Write-Host "    [*] Configuring ESC4..." -ForegroundColor Gray
             try {
                 $webTemplateDN = "CN=WebServer,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
-                if (-not (Get-ADObject -Identity $webTemplateDN -ErrorAction SilentlyContinue)) {
+                if (-not (Get-ADObject -Filter "DistinguishedName -eq '$webTemplateDN'" -ErrorAction SilentlyContinue)) {
                     Write-Host "    [!] ESC4: WebServer template not found." -ForegroundColor Yellow
                 } else {
-                    $acl = Get-Acl "AD:\$webTemplateDN"
                     $writeRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
                         $attackerUser.SID,
                         [System.DirectoryServices.ActiveDirectoryRights]::GenericWrite,
                         [System.Security.AccessControl.AccessControlType]::Allow
                     )
-                    $acl.AddAccessRule($writeRule)
+                    Set-LabACE -TargetDN $webTemplateDN -Rule $writeRule -Label "ESC4: vamsi.krishna -> GenericWrite on WebServer template"
 
                     if ($domainUsersSID) {
                         $enrollRule2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
@@ -1099,9 +1110,8 @@ if ($Role -eq "DC") {
                             [System.Security.AccessControl.AccessControlType]::Allow,
                             $enrollGuid
                         )
-                        $acl.AddAccessRule($enrollRule2)
+                        Set-LabACE -TargetDN $webTemplateDN -Rule $enrollRule2 -Label "ESC4: Domain Users enroll on WebServer template"
                     }
-                    Set-Acl "AD:\$webTemplateDN" $acl
                     certutil -setcatemplates +WebServer 2>$null | Out-Null
                     Write-Host "    [+] ESC4: vamsi.krishna -> GenericWrite on WebServer template" -ForegroundColor Green
                 }
@@ -1114,23 +1124,41 @@ if ($Role -eq "DC") {
 
         # ESC8: Web Enrollment without SSL or EPA
         Write-Host "    [*] Configuring ESC8..." -ForegroundColor Gray
-        try {
-            Import-Module WebAdministration -ErrorAction Stop
-            Set-WebConfigurationProperty `
-                -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
-                -filter "system.webServer/security/access" `
-                -name "sslFlags" -value "None" -ErrorAction Stop
-            Set-WebConfigurationProperty `
-                -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
-                -filter "system.webServer/security/authentication/windowsAuthentication" `
-                -name "extendedProtection.tokenChecking" -value "None" -ErrorAction Stop
-            Set-WebConfigurationProperty `
-                -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
-                -filter "system.webServer/security/authentication/windowsAuthentication" `
-                -name "enabled" -value $true -ErrorAction Stop
-            Write-Host "    [+] ESC8: NTLM relay to Web Enrollment (no SSL, no EPA)" -ForegroundColor Green
-        } catch {
-            Write-Host "    [!] ESC8 error: $($_.Exception.Message)" -ForegroundColor Yellow
+        $esc8Configured = $false
+        for ($i = 1; $i -le 5; $i++) {
+            try {
+                Import-Module WebAdministration -ErrorAction Stop
+                # Check if the path exists in IIS configuration before attempting to set properties
+                if (Get-WebConfiguration -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' -filter "system.webServer/security/access" -ErrorAction SilentlyContinue) {
+                    Set-WebConfigurationProperty `
+                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
+                        -filter "system.webServer/security/access" `
+                        -name "sslFlags" -value "None" -ErrorAction Stop
+                    Set-WebConfigurationProperty `
+                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
+                        -filter "system.webServer/security/authentication/windowsAuthentication" `
+                        -name "extendedProtection.tokenChecking" -value "None" -ErrorAction Stop
+                    Set-WebConfigurationProperty `
+                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
+                        -filter "system.webServer/security/authentication/windowsAuthentication" `
+                        -name "enabled" -value $true -ErrorAction Stop
+                    Set-WebConfigurationProperty `
+                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
+                        -filter "system.webServer/security/authentication/anonymousAuthentication" `
+                        -name "enabled" -value $false -ErrorAction Stop
+                    Write-Host "    [+] ESC8: NTLM relay to Web Enrollment (no SSL, no EPA, NTLM forced)" -ForegroundColor Green
+                    $esc8Configured = $true
+                    break
+                } else {
+                    throw "IIS virtual directory /CertSrv not registered yet"
+                }
+            } catch {
+                Write-Host "    [*] ESC8 configuration attempt $i failed: $($_.Exception.Message). Retrying in 5 seconds..." -ForegroundColor DarkGray
+                Start-Sleep -Seconds 5
+            }
+        }
+        if (-not $esc8Configured) {
+            Write-Host "    [!] ESC8 configuration failed after 5 attempts." -ForegroundColor Yellow
         }
 
         # ---- 9/10: Credential Exposure ----
@@ -1304,11 +1332,13 @@ if ($Role -eq "WS") {
             -GatewayAddr $Gateway -DNSServers @($DCIPAddress)
 
         # Rename
+        $renamed = $false
         if ($env:COMPUTERNAME -ne $WSHostname) {
             Write-Host "`n[*] Renaming to $WSHostname..." -ForegroundColor Yellow
             try {
                 Rename-Computer -NewName $WSHostname -Force -ErrorAction Stop
                 Write-Host "    [+] Rename scheduled for after reboot" -ForegroundColor Green
+                $renamed = $true
             } catch {
                 Write-Host "    [!] Rename failed: $($_.Exception.Message)" -ForegroundColor Yellow
             }
@@ -1316,21 +1346,26 @@ if ($Role -eq "WS") {
             Write-Host "`n[=] Hostname already $WSHostname" -ForegroundColor DarkGray
         }
 
-        Write-Host ""
-        Write-Host "  ================================================================" -ForegroundColor Green
-        Write-Host "   WS STAGE 1/3 COMPLETE" -ForegroundColor Green
-        Write-Host "  ================================================================" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "  Rebooting in 10 seconds..." -ForegroundColor White
-        Write-Host "  After reboot, the script continues automatically." -ForegroundColor White
-        Write-Host "  Make sure DC01 is running and fully set up first." -ForegroundColor Yellow
-        Write-Host ""
+        if ($renamed) {
+            Write-Host ""
+            Write-Host "  ================================================================" -ForegroundColor Green
+            Write-Host "   WS STAGE 1/3 COMPLETE" -ForegroundColor Green
+            Write-Host "  ================================================================" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "  Rebooting in 10 seconds..." -ForegroundColor White
+            Write-Host "  After reboot, the script continues automatically." -ForegroundColor White
+            Write-Host "  Make sure DC01 is running and fully set up first." -ForegroundColor Yellow
+            Write-Host ""
 
-        Register-LabResume
-        Start-Sleep -Seconds 10
-        Stop-Transcript
-        Restart-Computer -Force
-        exit 0
+            Register-LabResume
+            Start-Sleep -Seconds 10
+            Stop-Transcript
+            Restart-Computer -Force
+            exit 0
+        } else {
+            Write-Host "`n[*] No reboot needed for Stage 1. Moving directly to Stage 2..." -ForegroundColor Yellow
+            $stage = 2
+        }
     }
 
     # ========================================================
@@ -1343,13 +1378,9 @@ if ($Role -eq "WS") {
         # Already joined?
         $cs = Get-CimInstance Win32_ComputerSystem
         if ($cs.PartOfDomain -and $cs.Domain -eq $DomainFQDN) {
-            Write-Host "    [=] Already joined to $DomainFQDN." -ForegroundColor DarkGray
+            Write-Host "    [=] Already joined to $DomainFQDN. Skipping reboot and proceeding to Stage 3." -ForegroundColor Green
             Set-Content -Path $stageFile -Value "3"
-            Register-LabResume
-            Start-Sleep -Seconds 3
-            Stop-Transcript
-            Restart-Computer -Force
-            exit 0
+            $stage = 3
         }
 
         # Test DC
@@ -1445,10 +1476,14 @@ if ($Role -eq "WS") {
             -Description "ORSUBANK Automatic Update Service"
 
         # AlwaysInstallElevated
-        New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+        if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer")) {
+            New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+        }
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" `
             -Name "AlwaysInstallElevated" -Value 1 -Type DWord
-        New-Item -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+        if (-not (Test-Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer")) {
+            New-Item -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+        }
         Set-ItemProperty -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" `
             -Name "AlwaysInstallElevated" -Value 1 -Type DWord
         Write-Host "    [+] AlwaysInstallElevated (MSI runs as SYSTEM)" -ForegroundColor Green
@@ -1535,18 +1570,18 @@ if ($Role -eq "WS") {
         Write-Host "    [+] Remote UAC disabled (PtH works)" -ForegroundColor Green
 
         # Local admin
-        $localPass = ConvertTo-SecureString "LocalAdmin123!" -AsPlainText -Force
-        if (-not (Get-LocalUser -Name "localadmin" -ErrorAction SilentlyContinue)) {
+        $localPass = ConvertTo-SecureString "Operator123!" -AsPlainText -Force
+        if (-not (Get-LocalUser -Name "operator" -ErrorAction SilentlyContinue)) {
             try {
-                New-LocalUser -Name "localadmin" -Password $localPass `
+                New-LocalUser -Name "operator" -Password $localPass `
                     -PasswordNeverExpires -Description "Lab local admin" -ErrorAction Stop | Out-Null
-                Add-LocalGroupMember -Group "Administrators" -Member "localadmin" -ErrorAction Stop
-                Write-Host "    [+] Local admin: localadmin / LocalAdmin123!" -ForegroundColor Green
+                Add-LocalGroupMember -Group "Administrators" -Member "operator" -ErrorAction Stop
+                Write-Host "    [+] Local admin: operator / Operator123!" -ForegroundColor Green
             } catch {
                 Write-Host "    [!] Failed: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         } else {
-            Write-Host "    [=] localadmin exists" -ForegroundColor DarkGray
+            Write-Host "    [=] operator exists" -ForegroundColor DarkGray
         }
 
         # Credential exposure
@@ -1614,7 +1649,7 @@ if ($Role -eq "WS") {
         Write-Host "`n[4/4] Configuring coercion..." -ForegroundColor Yellow
         $webClient = Get-Service -Name WebClient -ErrorAction SilentlyContinue
         if ($webClient) {
-            Set-Service -Name WebClient -StartupType Automatic
+            Set-Service -Name WebClient -StartupType Automatic -ErrorAction SilentlyContinue
             Start-Service -Name WebClient -ErrorAction SilentlyContinue
             $wcStatus = (Get-Service WebClient).Status
             if ($wcStatus -eq "Running") {
