@@ -1065,7 +1065,7 @@ if ($Role -eq "DC") {
             Write-Host "    [*] Configuring ESC1..." -ForegroundColor Gray
             try {
                 $userTemplateDN = "CN=User,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
-                if (-not (Get-ADObject -Filter "DistinguishedName -eq '$userTemplateDN'" -ErrorAction SilentlyContinue)) {
+                if (-not (Get-ADObject -Identity $userTemplateDN -ErrorAction SilentlyContinue)) {
                     Write-Host "    [!] ESC1: User template not found." -ForegroundColor Yellow
                 } else {
                     $templateObj = [ADSI]"LDAP://$userTemplateDN"
@@ -1093,7 +1093,7 @@ if ($Role -eq "DC") {
             Write-Host "    [*] Configuring ESC4..." -ForegroundColor Gray
             try {
                 $webTemplateDN = "CN=WebServer,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
-                if (-not (Get-ADObject -Filter "DistinguishedName -eq '$webTemplateDN'" -ErrorAction SilentlyContinue)) {
+                if (-not (Get-ADObject -Identity $webTemplateDN -ErrorAction SilentlyContinue)) {
                     Write-Host "    [!] ESC4: WebServer template not found." -ForegroundColor Yellow
                 } else {
                     $writeRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
