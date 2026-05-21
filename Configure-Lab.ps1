@@ -706,15 +706,16 @@ if ($Role -eq "DC") {
         # ---- 1/10: OUs ----
         Write-Host "`n[1/10] Creating Organizational Units..." -ForegroundColor Yellow
         @("BankEmployees", "ServiceAccounts", "Workstations") | ForEach-Object {
-            if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$_'" -SearchBase $domain -ErrorAction SilentlyContinue)) {
+            $ouName = $_
+            if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -SearchBase $domain -ErrorAction SilentlyContinue)) {
                 try {
-                    New-ADOrganizationalUnit -Name $_ -Path $domain -ProtectedFromAccidentalDeletion $false -ErrorAction Stop
-                    Write-Host "    [+] Created OU: $_" -ForegroundColor Green
+                    New-ADOrganizationalUnit -Name $ouName -Path $domain -ProtectedFromAccidentalDeletion $false -ErrorAction Stop
+                    Write-Host "    [+] Created OU: $ouName" -ForegroundColor Green
                 } catch {
-                    Write-Host "    [!] Failed OU $_: $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Host "    [!] Failed OU ${ouName}: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
             } else {
-                Write-Host "    [=] OU exists: $_" -ForegroundColor DarkGray
+                Write-Host "    [=] OU exists: $ouName" -ForegroundColor DarkGray
             }
         }
 
@@ -809,11 +810,12 @@ if ($Role -eq "DC") {
         # ---- 4/10: AS-REP Roasting ----
         Write-Host "`n[4/10] Configuring AS-REP Roasting targets..." -ForegroundColor Yellow
         @("pranavi", "harsha.vardhan", "kiran.kumar") | ForEach-Object {
+            $acctName = $_
             try {
-                Set-ADAccountControl -Identity $_ -DoesNotRequirePreAuth $true -ErrorAction Stop
-                Write-Host "    [+] Pre-auth disabled: $_" -ForegroundColor Green
+                Set-ADAccountControl -Identity $acctName -DoesNotRequirePreAuth $true -ErrorAction Stop
+                Write-Host "    [+] Pre-auth disabled: $acctName" -ForegroundColor Green
             } catch {
-                Write-Host "    [!] Failed for $_: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "    [!] Failed for ${acctName}: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         }
 
