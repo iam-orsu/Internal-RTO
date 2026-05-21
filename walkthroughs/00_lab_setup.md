@@ -554,8 +554,14 @@ Repeat the VM creation process:
 3. Memory: 3 GB, Processors: 2, Disk: 40 GB
 4. Network Adapter: **NAT** (default)
 5. Attach the Windows 10/11 ISO
-6. Install Windows, set Administrator password
-7. Install VMware Tools
+6. Install Windows. When it asks "Who's going to use this PC?":
+   - Name: `labuser`
+   - Password: `P@ssw0rd123!`
+   - Skip the security questions (put anything)
+7. Skip all the Microsoft privacy/Cortana/tracking screens (turn everything off)
+8. Install VMware Tools (VM > Install VMware Tools > run setup64.exe > restart)
+
+This `labuser` account is a local admin by default (first account created on Windows 10/11 always is). The script will rename the machine to WS01 and join the domain. You will not use this account for attacks. It is just for running the setup script.
 
 ### Run the Script on WS01
 
