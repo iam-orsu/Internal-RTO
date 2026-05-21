@@ -1573,13 +1573,13 @@ if ($Role -eq "WS") {
         Write-Host "    [+] Remote UAC disabled (PtH works)" -ForegroundColor Green
 
         # Local admin
-        $localPass = ConvertTo-SecureString "Operator@Bank2026!" -AsPlainText -Force
+        $localPass = ConvertTo-SecureString "LabAdmin@2026!" -AsPlainText -Force
         if (-not (Get-LocalUser -Name "operator" -ErrorAction SilentlyContinue)) {
             try {
                 New-LocalUser -Name "operator" -Password $localPass `
                     -PasswordNeverExpires -Description "Lab local admin" -ErrorAction Stop | Out-Null
                 Add-LocalGroupMember -Group "Administrators" -Member "operator" -ErrorAction Stop
-                Write-Host "    [+] Local admin: operator / Operator@Bank2026!" -ForegroundColor Green
+                Write-Host "    [+] Local admin: operator / LabAdmin@2026!" -ForegroundColor Green
             } catch {
                 Write-Host "    [!] Failed: $($_.Exception.Message)" -ForegroundColor Yellow
             }
