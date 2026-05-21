@@ -220,8 +220,12 @@ function Set-LabStaticIP {
 
     if ($currentIP) {
         Write-Host "    [=] IP already $IPAddress" -ForegroundColor DarkGray
-        Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $DNSServers
-        Write-Host "    [+] DNS: $($DNSServers -join ', ')" -ForegroundColor Green
+        try {
+            Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $DNSServers -ErrorAction Stop
+            Write-Host "    [+] DNS: $($DNSServers -join ', ')" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to set DNS: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
         return $true
     }
 
@@ -247,13 +251,21 @@ function Set-LabStaticIP {
                 -PrefixLength $Prefix -ErrorAction Stop | Out-Null
             Write-Host "    [+] IP: $IPAddress/$Prefix (no gateway)" -ForegroundColor Green
         } catch {
-            Write-Host "    [!] Failed: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [!] Failed to set static IP: $($_.Exception.Message)" -ForegroundColor Red
+            try {
+                Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -Dhcp Enabled -ErrorAction SilentlyContinue
+                Write-Host "    [*] Rolled back to DHCP to restore connectivity." -ForegroundColor Yellow
+            } catch {}
             return $false
         }
     }
 
-    Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $DNSServers
-    Write-Host "    [+] DNS: $($DNSServers -join ', ')" -ForegroundColor Green
+    try {
+        Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $DNSServers -ErrorAction Stop
+        Write-Host "    [+] DNS: $($DNSServers -join ', ')" -ForegroundColor Green
+    } catch {
+        Write-Host "    [!] Failed to set DNS: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 
     # Set network profile to Private (prevents firewall blocking lab traffic)
     try {
@@ -694,7 +706,11 @@ if ($Role -eq "DC") {
                 Write-Host "    [+] Rename scheduled (takes effect after reboot)" -ForegroundColor Green
                 $renamed = $true
             } catch {
-                Write-Host "    [!] Rename failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "    [!] ERROR: Rename failed: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "    [!] Proceeding with incorrect hostname will break Active Directory configuration." -ForegroundColor Yellow
+                try { Set-Content -Path $stageFile -Value "1" -Force -ErrorAction SilentlyContinue } catch {}
+                try { Stop-Transcript } catch {}
+                exit 1
             }
         } else {
             Write-Host "`n[=] Hostname already $DCHostname" -ForegroundColor DarkGray
@@ -814,6 +830,7 @@ if ($Role -eq "DC") {
         Write-Host ""
 
         Unregister-LabResume
+        $skippedWS01Items = @()
 
         # Wait for AD
         if (-not (Wait-ForADReady -MaxWaitSeconds 120)) {
@@ -1113,7 +1130,6 @@ if ($Role -eq "DC") {
         # DCSync rights for WS01$
         try {
             $ws01 = Get-ADComputer -Filter "Name -eq 'WS01'" -ErrorAction SilentlyContinue
-            $skippedWS01Items = @()
             if ($ws01) {
                 $domainDN = (Get-ADDomain).DistinguishedName
                 $ace1 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
@@ -1202,8 +1218,8 @@ if ($Role -eq "DC") {
         try { $domainUsersSID = (Get-ADGroup -Filter "Name -eq 'Domain Users'" | Select-Object -First 1).SID } catch {}
 
         try {
-            $adcsInstalled = (Get-WindowsFeature ADCS-Cert-Authority).Installed
-            if (-not $adcsInstalled) {
+            $adcsFeature = Get-WindowsFeature ADCS-Cert-Authority
+            if (-not $adcsFeature.Installed) {
                 Write-Host "    [*] Installing ADCS (takes a few minutes)..." -ForegroundColor Gray
                 $result = Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment, Web-Windows-Auth -IncludeManagementTools
                 if ($result.Success) {
@@ -1211,16 +1227,22 @@ if ($Role -eq "DC") {
                 } else {
                     Write-Host "    [!] ADCS install failed." -ForegroundColor Red
                 }
+            } else {
+                Write-Host "    [=] ADCS features already installed" -ForegroundColor DarkGray
+            }
 
-                Start-Service W3SVC -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 5
+            Start-Service W3SVC -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
 
+            $caServiceExists = [bool](Get-Service -Name CertSvc -ErrorAction SilentlyContinue)
+            if (-not $caServiceExists) {
+                Write-Host "    [*] CA Service not configured. Configuring Certificate Authority..." -ForegroundColor Gray
                 try {
                     Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
                         -CACommonName "ORSUBANK-CA" -KeyLength 2048 `
                         -HashAlgorithmName SHA256 -ValidityPeriod Years `
                         -ValidityPeriodUnits 10 -Force | Out-Null
-                    Write-Host "    [+] Enterprise Root CA: ORSUBANK-CA" -ForegroundColor Green
+                    Write-Host "    [+] Enterprise Root CA: ORSUBANK-CA configured" -ForegroundColor Green
                 } catch {
                     Write-Host "    [!] CA config: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
@@ -1234,7 +1256,7 @@ if ($Role -eq "DC") {
                     Write-Host "    [!] Web Enrollment: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
             } else {
-                Write-Host "    [=] ADCS already installed" -ForegroundColor DarkGray
+                Write-Host "    [=] Certificate Authority service already configured" -ForegroundColor DarkGray
             }
         } catch {
             Write-Host "    [!] ADCS configuration error: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -1584,7 +1606,11 @@ if ($Role -eq "WS") {
                 Write-Host "    [+] Rename scheduled for after reboot" -ForegroundColor Green
                 $renamed = $true
             } catch {
-                Write-Host "    [!] Rename failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "    [!] ERROR: Rename failed: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "    [!] Proceeding with incorrect hostname will break Active Directory configuration." -ForegroundColor Yellow
+                try { Set-Content -Path $stageFile -Value "1" -Force -ErrorAction SilentlyContinue } catch {}
+                try { Stop-Transcript } catch {}
+                exit 1
             }
         } else {
             Write-Host "`n[=] Hostname already $WSHostname" -ForegroundColor DarkGray
@@ -1644,6 +1670,15 @@ if ($Role -eq "WS") {
                 }
             } catch {}
             if (-not $dcReachable) {
+                Write-Host "    [!] Ping failed. Trying TCP LDAP port (389) connectivity check..." -ForegroundColor Yellow
+                try {
+                    $tcpTest = Test-NetConnection -ComputerName $DCIPAddress -Port 389 -WarningAction SilentlyContinue
+                    if ($tcpTest.TcpTestSucceeded) {
+                        $dcReachable = $true
+                    }
+                } catch {}
+            }
+            if (-not $dcReachable) {
                 Write-Host "    [!] Cannot reach DC01 at $DCIPAddress" -ForegroundColor Red
                 Write-Host "    [!] Check:" -ForegroundColor Yellow
                 Write-Host "        - Is DC01 powered on?" -ForegroundColor White
@@ -1656,10 +1691,32 @@ if ($Role -eq "WS") {
 
             # Test DNS
             Write-Host "    [*] Testing DNS resolution..." -ForegroundColor Gray
+            $dnsResolved = $false
             try {
                 $dnsResult = Resolve-DnsName $DomainFQDN -ErrorAction Stop
                 Write-Host "    [+] DNS resolves $DomainFQDN -> $($dnsResult[0].IPAddress)" -ForegroundColor Green
+                $dnsResolved = $true
             } catch {
+                Write-Host "    [!] DNS cannot resolve $DomainFQDN. Attempting self-repair..." -ForegroundColor Yellow
+                try {
+                    $repairAdapter = Get-NetAdapter | Where-Object {
+                        $_.Status -eq "Up" -and
+                        $_.InterfaceDescription -notlike "*Loopback*" -and
+                        $_.InterfaceDescription -notlike "*Bluetooth*"
+                    } | Select-Object -First 1
+                    if ($repairAdapter) {
+                        Set-DnsClientServerAddress -InterfaceIndex $repairAdapter.ifIndex -ServerAddresses $DCIPAddress -ErrorAction Stop
+                        Write-Host "    [+] Forced adapter DNS to $DCIPAddress. Waiting 5s..." -ForegroundColor Green
+                        Start-Sleep -Seconds 5
+                        $dnsResult = Resolve-DnsName $DomainFQDN -ErrorAction Stop
+                        Write-Host "    [+] DNS resolves $DomainFQDN -> $($dnsResult[0].IPAddress) after repair" -ForegroundColor Green
+                        $dnsResolved = $true
+                    }
+                } catch {
+                    Write-Host "    [!] DNS repair failed: $($_.Exception.Message)" -ForegroundColor Red
+                }
+            }
+            if (-not $dnsResolved) {
                 Write-Host "    [!] DNS cannot resolve $DomainFQDN" -ForegroundColor Red
                 Write-Host "    [!] WS01 DNS must point to $DCIPAddress" -ForegroundColor Yellow
                 try { Stop-Transcript } catch {}
@@ -1923,13 +1980,35 @@ if ($Role -eq "WS") {
             if (-not (Get-LocalUser -Name "operator" -ErrorAction SilentlyContinue)) {
                 New-LocalUser -Name "operator" -Password $localPass `
                     -PasswordNeverExpires -Description "Lab local admin" -ErrorAction Stop | Out-Null
-                Add-LocalGroupMember -Group "Administrators" -Member "operator" -ErrorAction Stop
-                Write-Host "    [+] Local admin: operator / LabAdmin@2026!" -ForegroundColor Green
+                Write-Host "    [+] Local user created: operator" -ForegroundColor Green
             } else {
-                Write-Host "    [=] operator exists" -ForegroundColor DarkGray
+                Write-Host "    [=] operator user already exists" -ForegroundColor DarkGray
+            }
+            
+            # Translate SID S-1-5-32-544 to local group name (support non-English systems)
+            $adminGroupName = (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")).Translate([System.Security.Principal.NTAccount]).Value.Split("\")[-1]
+            
+            $isMember = $false
+            try {
+                $members = Get-LocalGroupMember -Group $adminGroupName -ErrorAction SilentlyContinue
+                if ($members) {
+                    foreach ($m in $members) {
+                        if ($m.Name -match "operator$") {
+                            $isMember = $true
+                            break
+                        }
+                    }
+                }
+            } catch {}
+
+            if (-not $isMember) {
+                Add-LocalGroupMember -Group $adminGroupName -Member "operator" -ErrorAction Stop
+                Write-Host "    [+] Added operator to local admin group ($adminGroupName)" -ForegroundColor Green
+            } else {
+                Write-Host "    [=] operator is already a member of local admin group ($adminGroupName)" -ForegroundColor DarkGray
             }
         } catch {
-            Write-Host "    [!] Local admin creation warning: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "    [!] Local admin creation/group assignment warning: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # Credential exposure
