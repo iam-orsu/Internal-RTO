@@ -477,22 +477,44 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 .\Configure-Lab.ps1
 ```
 
+The script will ask you what this machine is:
+
+```
+  ============================================================
+   WHAT IS THIS MACHINE?
+  ============================================================
+
+    [D] Domain Controller  (DC01 - Windows Server)
+    [W] Workstation        (WS01 - Windows 10/11)
+
+  Press D or W: D
+```
+
+Type **D** and press Enter. The script saves your choice to `C:\LabSetup\role.txt` so it will not ask again after reboots. It remembers.
+
+You can also skip the menu entirely by passing the role directly:
+
+```powershell
+.\Configure-Lab.ps1 -Role DC
+```
+
 ### What Happens Automatically
 
 **Run 1 (Stage 1/3):**
 
 The script will:
+- Ask you to pick D or W (only on first run, saved for future runs)
 - Auto-detect your VMware NAT subnet (it reads the DHCP address)
-- Show you the detected IPs (something like DC: 192.168.138.10, WS: 192.168.138.20)
+- Show you the detected IPs (something like DC: 192.168.233.10, WS: 192.168.233.20)
 - Disable Windows Defender (asks you to turn off Tamper Protection manually if it is on)
 - Set a static IP for DC01 on the detected subnet (.10)
 - Set the network profile to Private and allow ICMP (so pings work between VMs)
 - Install the AD DS feature
 - Rename the computer to DC01
-- Register itself to auto-run after reboot
+- Register itself to auto-run after reboot (passes -Role DC so no menu after reboot)
 - Reboot
 
-You do not need to do anything. Just watch the output and wait for the reboot.
+You do not need to do anything after pressing D. Just watch the output and wait for the reboot.
 
 **Run 2 (Stage 2/3):**
 
@@ -543,6 +565,14 @@ Copy `Configure-Lab.ps1` to WS01 and run it the same way:
 Set-ExecutionPolicy Bypass -Scope Process -Force
 .\Configure-Lab.ps1
 ```
+
+The same menu appears. This time type **W** and press Enter.
+
+```
+  Press D or W: W
+```
+
+The choice is saved. After reboots, the script knows this is WS01 and will not ask again.
 
 **Run 1 (Stage 1/3):** Detects the NAT subnet, disables Defender, sets static IP (.20), sets DNS to DC01's IP, renames to WS01, reboots.
 
