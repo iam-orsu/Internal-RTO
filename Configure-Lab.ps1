@@ -74,7 +74,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal(
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "[!] ERROR: Run this as Administrator." -ForegroundColor Red
     Write-Host "    Right-click PowerShell -> Run as Administrator" -ForegroundColor Yellow
-    Stop-Transcript
+    try { Stop-Transcript } catch {}
     exit 1
 }
 
@@ -533,7 +533,7 @@ if (-not $net) {
     Write-Host "        - VM has a NAT network adapter" -ForegroundColor White
     Write-Host "        - The adapter is connected and has an IP" -ForegroundColor White
     Write-Host "        - Run 'ipconfig' to check" -ForegroundColor White
-    Stop-Transcript
+    try { Stop-Transcript } catch {}
     exit 1
 }
 
@@ -595,7 +595,7 @@ if ($Role -eq "DC") {
             } else {
                 Write-Host "    [!] AD DS install FAILED." -ForegroundColor Red
                 Set-Content -Path $stageFile -Value "1"
-                Stop-Transcript
+                try { Stop-Transcript } catch {}
                 exit 1
             }
         } else {
@@ -654,62 +654,62 @@ if ($Role -eq "DC") {
             Write-Host "    [=] Already a Domain Controller. Skipping reboot and proceeding to Stage 3." -ForegroundColor Green
             Set-Content -Path $stageFile -Value "3"
             $stage = 3
-        }
-
-        # Verify AD DS feature
-        $addsCheck = Get-WindowsFeature AD-Domain-Services
-        if (-not $addsCheck.Installed) {
-            Write-Host "    [!] AD DS not installed. Installing..." -ForegroundColor Yellow
-            $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
-            if (-not $result.Success) {
-                Write-Host "    [!] AD DS install failed." -ForegroundColor Red
-                Stop-Transcript
-                exit 1
+        } else {
+            # Verify AD DS feature
+            $addsCheck = Get-WindowsFeature AD-Domain-Services
+            if (-not $addsCheck.Installed) {
+                Write-Host "    [!] AD DS not installed. Installing..." -ForegroundColor Yellow
+                $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
+                if (-not $result.Success) {
+                    Write-Host "    [!] AD DS install failed." -ForegroundColor Red
+                    try { Stop-Transcript } catch {}
+                    exit 1
+                }
+                Register-LabResume
+                Start-Sleep -Seconds 3
+                try { Stop-Transcript } catch {}
+                try { Restart-Computer -Force } catch {}
+                exit 0
             }
+
+            # Save stage 3 BEFORE promotion (promotion auto-reboots)
+            Set-Content -Path $stageFile -Value "3"
             Register-LabResume
-            Start-Sleep -Seconds 3
+
+            $safeModePass = ConvertTo-SecureString $DSRMPassword -AsPlainText -Force
+
+            try {
+                Import-Module ADDSDeployment -ErrorAction Stop
+
+                Install-ADDSForest `
+                    -DomainName $DomainFQDN `
+                    -DomainNetbiosName $DomainNetBIOS `
+                    -SafeModeAdministratorPassword $safeModePass `
+                    -InstallDns:$true `
+                    -CreateDnsDelegation:$false `
+                    -DatabasePath "C:\Windows\NTDS" `
+                    -LogPath "C:\Windows\NTDS" `
+                    -SysvolPath "C:\Windows\SYSVOL" `
+                    -NoRebootOnCompletion:$false `
+                    -Force:$true
+
+                # Normally unreachable (auto-reboot)
+                try { Stop-Transcript } catch {}
+                try { Restart-Computer -Force } catch {}
+            } catch {
+                Write-Host ""
+                Write-Host "    [!] Promotion FAILED: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host ""
+                Write-Host "    Common fixes:" -ForegroundColor Yellow
+                Write-Host "      - 'domain already exists': reboot and run again" -ForegroundColor White
+                Write-Host "      - 'access denied': run as Administrator" -ForegroundColor White
+                Write-Host ""
+                Set-Content -Path $stageFile -Value "2"
+                Write-Host "    [*] Stage reset to 2. Fix the issue and run again." -ForegroundColor Yellow
+            }
             try { Stop-Transcript } catch {}
-            try { Restart-Computer -Force } catch {}
             exit 0
         }
-
-        # Save stage 3 BEFORE promotion (promotion auto-reboots)
-        Set-Content -Path $stageFile -Value "3"
-        Register-LabResume
-
-        $safeModePass = ConvertTo-SecureString $DSRMPassword -AsPlainText -Force
-
-        try {
-            Import-Module ADDSDeployment -ErrorAction Stop
-
-            Install-ADDSForest `
-                -DomainName $DomainFQDN `
-                -DomainNetbiosName $DomainNetBIOS `
-                -SafeModeAdministratorPassword $safeModePass `
-                -InstallDns:$true `
-                -CreateDnsDelegation:$false `
-                -DatabasePath "C:\Windows\NTDS" `
-                -LogPath "C:\Windows\NTDS" `
-                -SysvolPath "C:\Windows\SYSVOL" `
-                -NoRebootOnCompletion:$false `
-                -Force:$true
-
-            # Normally unreachable (auto-reboot)
-            try { Stop-Transcript } catch {}
-            try { Restart-Computer -Force } catch {}
-        } catch {
-            Write-Host ""
-            Write-Host "    [!] Promotion FAILED: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host ""
-            Write-Host "    Common fixes:" -ForegroundColor Yellow
-            Write-Host "      - 'domain already exists': reboot and run again" -ForegroundColor White
-            Write-Host "      - 'access denied': run as Administrator" -ForegroundColor White
-            Write-Host ""
-            Set-Content -Path $stageFile -Value "2"
-            Write-Host "    [*] Stage reset to 2. Fix the issue and run again." -ForegroundColor Yellow
-        }
-        Stop-Transcript
-        exit 0
     }
 
     # ========================================================
@@ -724,7 +724,7 @@ if ($Role -eq "DC") {
         # Wait for AD
         if (-not (Wait-ForADReady -MaxWaitSeconds 120)) {
             Write-Host "    [!] AD not responding. Wait a minute and run again." -ForegroundColor Red
-            Stop-Transcript
+            try { Stop-Transcript } catch {}
             exit 1
         }
 
@@ -1381,63 +1381,63 @@ if ($Role -eq "WS") {
             Write-Host "    [=] Already joined to $DomainFQDN. Skipping reboot and proceeding to Stage 3." -ForegroundColor Green
             Set-Content -Path $stageFile -Value "3"
             $stage = 3
-        }
+        } else {
+            # Test DC
+            Write-Host "    [*] Testing connection to DC01 ($DCIPAddress)..." -ForegroundColor Gray
+            if (-not (Test-Connection $DCIPAddress -Count 2 -Quiet)) {
+                Write-Host "    [!] Cannot reach DC01 at $DCIPAddress" -ForegroundColor Red
+                Write-Host "    [!] Check:" -ForegroundColor Yellow
+                Write-Host "        - Is DC01 powered on?" -ForegroundColor White
+                Write-Host "        - Did DC01 complete all 3 stages?" -ForegroundColor White
+                Write-Host "        - Both VMs using NAT adapter?" -ForegroundColor White
+                try { Stop-Transcript } catch {}
+                exit 1
+            }
+            Write-Host "    [+] DC01 reachable" -ForegroundColor Green
 
-        # Test DC
-        Write-Host "    [*] Testing connection to DC01 ($DCIPAddress)..." -ForegroundColor Gray
-        if (-not (Test-Connection $DCIPAddress -Count 2 -Quiet)) {
-            Write-Host "    [!] Cannot reach DC01 at $DCIPAddress" -ForegroundColor Red
-            Write-Host "    [!] Check:" -ForegroundColor Yellow
-            Write-Host "        - Is DC01 powered on?" -ForegroundColor White
-            Write-Host "        - Did DC01 complete all 3 stages?" -ForegroundColor White
-            Write-Host "        - Both VMs using NAT adapter?" -ForegroundColor White
-            Stop-Transcript
-            exit 1
-        }
-        Write-Host "    [+] DC01 reachable" -ForegroundColor Green
+            # Test DNS
+            Write-Host "    [*] Testing DNS resolution..." -ForegroundColor Gray
+            try {
+                $dnsResult = Resolve-DnsName $DomainFQDN -ErrorAction Stop
+                Write-Host "    [+] DNS resolves $DomainFQDN -> $($dnsResult[0].IPAddress)" -ForegroundColor Green
+            } catch {
+                Write-Host "    [!] DNS cannot resolve $DomainFQDN" -ForegroundColor Red
+                Write-Host "    [!] WS01 DNS must point to $DCIPAddress" -ForegroundColor Yellow
+                try { Stop-Transcript } catch {}
+                exit 1
+            }
 
-        # Test DNS
-        Write-Host "    [*] Testing DNS resolution..." -ForegroundColor Gray
-        try {
-            $dnsResult = Resolve-DnsName $DomainFQDN -ErrorAction Stop
-            Write-Host "    [+] DNS resolves $DomainFQDN -> $($dnsResult[0].IPAddress)" -ForegroundColor Green
-        } catch {
-            Write-Host "    [!] DNS cannot resolve $DomainFQDN" -ForegroundColor Red
-            Write-Host "    [!] WS01 DNS must point to $DCIPAddress" -ForegroundColor Yellow
-            Stop-Transcript
-            exit 1
-        }
+            # Join domain
+            Write-Host ""
+            Write-Host "  Enter domain admin credentials:" -ForegroundColor White
+            Write-Host "    Username: $DomainNetBIOS\Administrator" -ForegroundColor White
+            Write-Host "    Password: (the one you set on DC01 during Windows install)" -ForegroundColor White
+            Write-Host ""
 
-        # Join domain
-        Write-Host ""
-        Write-Host "  Enter domain admin credentials:" -ForegroundColor White
-        Write-Host "    Username: $DomainNetBIOS\Administrator" -ForegroundColor White
-        Write-Host "    Password: (the one you set on DC01 during Windows install)" -ForegroundColor White
-        Write-Host ""
+            try {
+                $cred = Get-Credential -Message "Enter $DomainNetBIOS\Administrator password" `
+                    -UserName "$DomainNetBIOS\Administrator"
 
-        try {
-            $cred = Get-Credential -Message "Enter $DomainNetBIOS\Administrator password" `
-                -UserName "$DomainNetBIOS\Administrator"
+                Add-Computer -DomainName $DomainFQDN -Credential $cred -Force -ErrorAction Stop
 
-            Add-Computer -DomainName $DomainFQDN -Credential $cred -Force -ErrorAction Stop
-
-            Set-Content -Path $stageFile -Value "3"
-            Write-Host "    [+] Domain join successful! Rebooting..." -ForegroundColor Green
-            Register-LabResume
-            Start-Sleep -Seconds 5
+                Set-Content -Path $stageFile -Value "3"
+                Write-Host "    [+] Domain join successful! Rebooting..." -ForegroundColor Green
+                Register-LabResume
+                Start-Sleep -Seconds 5
+                try { Stop-Transcript } catch {}
+                try { Restart-Computer -Force } catch {}
+            } catch {
+                Write-Host "    [!] Domain join FAILED: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host ""
+                Write-Host "    Fixes:" -ForegroundColor Yellow
+                Write-Host "      - Wrong password: try again" -ForegroundColor White
+                Write-Host "      - 'RPC unavailable': check DC01 firewall" -ForegroundColor White
+                Write-Host "      - 'Domain not found': run nslookup $DomainFQDN" -ForegroundColor White
+                Write-Host ""
+            }
             try { Stop-Transcript } catch {}
-            try { Restart-Computer -Force } catch {}
-        } catch {
-            Write-Host "    [!] Domain join FAILED: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host ""
-            Write-Host "    Fixes:" -ForegroundColor Yellow
-            Write-Host "      - Wrong password: try again" -ForegroundColor White
-            Write-Host "      - 'RPC unavailable': check DC01 firewall" -ForegroundColor White
-            Write-Host "      - 'Domain not found': run nslookup $DomainFQDN" -ForegroundColor White
-            Write-Host ""
+            exit 0
         }
-        Stop-Transcript
-        exit 0
     }
 
     # ========================================================
@@ -1705,4 +1705,4 @@ if ($Role -eq "WS") {
 }
 
 Write-Host "[*] Configure-Lab.ps1 finished at $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Cyan
-Stop-Transcript | Out-Null
+try { Stop-Transcript } catch {}
