@@ -1573,13 +1573,13 @@ if ($Role -eq "WS") {
         Write-Host "    [+] Remote UAC disabled (PtH works)" -ForegroundColor Green
 
         # Local admin
-        $localPass = ConvertTo-SecureString "Operator123!" -AsPlainText -Force
+        $localPass = ConvertTo-SecureString "Operator@Bank2026!" -AsPlainText -Force
         if (-not (Get-LocalUser -Name "operator" -ErrorAction SilentlyContinue)) {
             try {
                 New-LocalUser -Name "operator" -Password $localPass `
                     -PasswordNeverExpires -Description "Lab local admin" -ErrorAction Stop | Out-Null
                 Add-LocalGroupMember -Group "Administrators" -Member "operator" -ErrorAction Stop
-                Write-Host "    [+] Local admin: operator / Operator123!" -ForegroundColor Green
+                Write-Host "    [+] Local admin: operator / Operator@Bank2026!" -ForegroundColor Green
             } catch {
                 Write-Host "    [!] Failed: $($_.Exception.Message)" -ForegroundColor Yellow
             }
@@ -1630,19 +1630,26 @@ if ($Role -eq "WS") {
 
         # WMI subscription
         try {
+            # Clean up old WMI objects if they exist from a previous run to avoid "already exists" errors
+            Get-CimInstance -Namespace "root\subscription" -ClassName "__EventFilter" -Filter "Name='ORSUFilter'" -ErrorAction SilentlyContinue | Remove-CimInstance -ErrorAction SilentlyContinue
+            Get-CimInstance -Namespace "root\subscription" -ClassName "CommandLineEventConsumer" -Filter "Name='ORSUConsumer'" -ErrorAction SilentlyContinue | Remove-CimInstance -ErrorAction SilentlyContinue
+            Get-CimInstance -Namespace "root\subscription" -ClassName "__FilterToConsumerBinding" -ErrorAction SilentlyContinue | 
+                Where-Object { $_.Filter -match "ORSUFilter" -or $_.Consumer -match "ORSUConsumer" } | 
+                Remove-CimInstance -ErrorAction SilentlyContinue
+
             $filter = Set-WmiInstance -Namespace "root\subscription" -Class "__EventFilter" -Arguments @{
                 Name = "ORSUFilter"
                 EventNamespace = "root\cimv2"
                 QueryLanguage = "WQL"
                 Query = "SELECT * FROM __InstanceCreationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_Process' AND TargetInstance.Name = 'notepad.exe'"
-            }
+            } -ErrorAction Stop
             $consumer = Set-WmiInstance -Namespace "root\subscription" -Class "CommandLineEventConsumer" -Arguments @{
                 Name = "ORSUConsumer"
                 CommandLineTemplate = "powershell.exe -WindowStyle Hidden -Command `"Write-Host 'WMI persistence'`""
-            }
+            } -ErrorAction Stop
             Set-WmiInstance -Namespace "root\subscription" -Class "__FilterToConsumerBinding" -Arguments @{
                 Filter = $filter; Consumer = $consumer
-            } | Out-Null
+            } -ErrorAction Stop | Out-Null
             Write-Host "    [+] WMI event subscription (fileless)" -ForegroundColor Green
         } catch {
             Write-Host "    [!] WMI subscription: $($_.Exception.Message)" -ForegroundColor Yellow
