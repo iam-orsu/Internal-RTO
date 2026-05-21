@@ -1,20 +1,26 @@
 # ============================================================
-# ORSUBANK AD RED TEAM LAB V3 - HARDENED STAGED SETUP
+# ORSUBANK AD RED TEAM LAB V4 - AUTOMATED SETUP
 # ============================================================
 #
 # Single script for DC01 and WS01.
-# Run it, reboot when told, run it again. 3 runs per machine.
+# Uses VMware NAT (default adapter). No manual network config.
+#
+# How it works:
+#   1. Create a VM with default NAT network adapter
+#   2. Install Windows, set Administrator password
+#   3. Run this script. It auto-detects the network.
+#   4. It reboots and continues automatically. 3 runs per machine.
 #
 #   DC01: Run 1/3 -> reboot -> Run 2/3 -> auto-reboot -> Run 3/3 -> done
 #   WS01: Run 1/3 -> reboot -> Run 2/3 -> reboot -> Run 3/3 -> done
 #
 # Usage:
-#   .\Configure-Lab.ps1              (auto-detect role and stage)
+#   .\Configure-Lab.ps1              (auto-detect everything)
 #   .\Configure-Lab.ps1 -Role DC     (force DC mode)
 #   .\Configure-Lab.ps1 -Role WS     (force WS mode)
-#   .\Configure-Lab.ps1 -Reset       (wipe progress, start from Stage 1)
+#   .\Configure-Lab.ps1 -Reset       (wipe progress, start over)
 #
-# All output is logged to C:\LabSetup\setup.log
+# All output logged to C:\LabSetup\setup.log
 # ============================================================
 
 param(
@@ -24,47 +30,44 @@ param(
 )
 
 # ============================================================
-# NETWORK CONFIG (change these if your network is different)
+# LAB CONFIG
 # ============================================================
-$DCHostname     = "DC01"
-$WSHostname     = "WS01"
-$DCIPAddress    = "192.168.100.10"
-$WSIPAddress    = "192.168.100.20"
-$SubnetPrefix   = 24
-$Gateway        = "192.168.100.1"
 $DomainFQDN     = "orsubank.local"
 $DomainNetBIOS  = "ORSUBANK"
 $DSRMPassword   = "DSRMPass@2024!"
+$DCHostname     = "DC01"
+$WSHostname     = "WS01"
 
 # ============================================================
-# BOOTSTRAP: log dir, logging, execution policy check
+# BOOTSTRAP
 # ============================================================
-$labDir   = "C:\LabSetup"
-$logFile  = "$labDir\setup.log"
+$labDir    = "C:\LabSetup"
+$logFile   = "$labDir\setup.log"
 $stageFile = "$labDir\stage.txt"
+$netConf   = "$labDir\network.conf"
 
 if (-not (Test-Path $labDir)) {
     New-Item -Path $labDir -ItemType Directory -Force | Out-Null
 }
 
-# Start transcript so everything is saved to a log file
+# Copy script to lab dir so auto-resume can find it
+$scriptInLab = "$labDir\Configure-Lab.ps1"
+if ($PSCommandPath -and ($PSCommandPath -ne $scriptInLab)) {
+    Copy-Item $PSCommandPath $scriptInLab -Force -ErrorAction SilentlyContinue
+}
+
 try { Stop-Transcript -ErrorAction SilentlyContinue } catch {}
 Start-Transcript -Path $logFile -Append -Force | Out-Null
-
 Write-Host "[*] Logging to $logFile" -ForegroundColor Gray
 
-# ============================================================
-# EXECUTION POLICY CHECK
-# ============================================================
+# Execution policy
 $currentPolicy = Get-ExecutionPolicy -Scope Process
 if ($currentPolicy -eq "Restricted") {
-    Write-Host "[!] Execution policy is Restricted. Setting to Bypass for this session." -ForegroundColor Yellow
+    Write-Host "[!] Setting execution policy to Bypass for this session." -ForegroundColor Yellow
     Set-ExecutionPolicy Bypass -Scope Process -Force
 }
 
-# ============================================================
-# ADMIN CHECK
-# ============================================================
+# Admin check
 $principal = New-Object Security.Principal.WindowsPrincipal(
     [Security.Principal.WindowsIdentity]::GetCurrent()
 )
@@ -75,16 +78,217 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     exit 1
 }
 
-# ============================================================
-# HELPER FUNCTIONS
-# ============================================================
 
+# ============================================================
+# HELPER: Auto-detect VMware NAT network
+# ============================================================
+function Find-LabNetwork {
+    # 1. Check saved config (from a previous run)
+    if (Test-Path $netConf) {
+        $conf = @{}
+        Get-Content $netConf | ForEach-Object {
+            if ($_ -match '^(\w+)=(.+)$') {
+                $conf[$Matches[1]] = $Matches[2].Trim()
+            }
+        }
+        if ($conf.ContainsKey("Subnet") -and $conf.ContainsKey("DCIPAddress")) {
+            Write-Host "    [=] Using saved config: $($conf.Subnet).0/24" -ForegroundColor DarkGray
+            return $conf
+        }
+    }
+
+    Write-Host "    [*] Auto-detecting VMware NAT subnet..." -ForegroundColor Gray
+
+    $adapters = Get-NetAdapter | Where-Object {
+        $_.Status -eq "Up" -and
+        $_.InterfaceDescription -notlike "*Loopback*" -and
+        $_.InterfaceDescription -notlike "*Bluetooth*"
+    }
+
+    # 2. Try DHCP addresses (fresh VM, first run)
+    foreach ($adapter in $adapters) {
+        $ipConfig = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike "169.254.*" -and $_.PrefixOrigin -eq "Dhcp" } |
+            Select-Object -First 1
+
+        if ($ipConfig) {
+            $ip = $ipConfig.IPAddress
+            $octets = $ip.Split(".")
+            $subnet = "$($octets[0]).$($octets[1]).$($octets[2])"
+
+            $conf = @{
+                Subnet        = $subnet
+                DCIPAddress   = "$subnet.10"
+                WSIPAddress   = "$subnet.20"
+                KaliIPAddress = "$subnet.30"
+                Gateway       = "$subnet.2"
+                SubnetPrefix  = "24"
+                AdapterIndex  = [string]$adapter.ifIndex
+                AdapterName   = $adapter.Name
+                DetectedFrom  = $ip
+            }
+
+            $conf.GetEnumerator() | Sort-Object Key | ForEach-Object {
+                "$($_.Key)=$($_.Value)"
+            } | Set-Content $netConf
+
+            Write-Host "    [+] Detected NAT subnet: $subnet.0/24 (from DHCP: $ip)" -ForegroundColor Green
+            Write-Host "    [+] DC: $subnet.10 | WS: $subnet.20 | Gateway: $subnet.2" -ForegroundColor Green
+            return $conf
+        }
+    }
+
+    # 3. No DHCP found. Check if our static IP is already set (re-run)
+    foreach ($adapter in $adapters) {
+        $ipConfig = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike "169.254.*" } |
+            Select-Object -First 1
+
+        if ($ipConfig) {
+            $ip = $ipConfig.IPAddress
+            $octets = $ip.Split(".")
+            $lastOctet = [int]$octets[3]
+
+            if ($lastOctet -eq 10 -or $lastOctet -eq 20) {
+                $subnet = "$($octets[0]).$($octets[1]).$($octets[2])"
+                $conf = @{
+                    Subnet        = $subnet
+                    DCIPAddress   = "$subnet.10"
+                    WSIPAddress   = "$subnet.20"
+                    KaliIPAddress = "$subnet.30"
+                    Gateway       = "$subnet.2"
+                    SubnetPrefix  = "24"
+                    AdapterIndex  = [string]$adapter.ifIndex
+                    AdapterName   = $adapter.Name
+                    DetectedFrom  = $ip
+                }
+
+                $conf.GetEnumerator() | Sort-Object Key | ForEach-Object {
+                    "$($_.Key)=$($_.Value)"
+                } | Set-Content $netConf
+
+                Write-Host "    [+] Found existing lab IP: $ip (subnet: $subnet.0/24)" -ForegroundColor Green
+                return $conf
+            }
+        }
+    }
+
+    return $null
+}
+
+
+# ============================================================
+# HELPER: Set static IP
+# ============================================================
+function Set-LabStaticIP {
+    param(
+        [string]$IPAddress,
+        [int]$Prefix,
+        [string]$GatewayAddr,
+        [string[]]$DNSServers
+    )
+
+    Write-Host "`n[*] Configuring network..." -ForegroundColor Yellow
+
+    $adapter = Get-NetAdapter | Where-Object {
+        $_.Status -eq "Up" -and
+        $_.InterfaceDescription -notlike "*Loopback*" -and
+        $_.InterfaceDescription -notlike "*Bluetooth*"
+    } | Select-Object -First 1
+
+    if (-not $adapter) {
+        Write-Host "    [!] No active network adapter found." -ForegroundColor Red
+        Get-NetAdapter | Format-Table Name, Status, InterfaceDescription -AutoSize
+        return $false
+    }
+
+    Write-Host "    [*] Adapter: $($adapter.Name) ($($adapter.InterfaceDescription))" -ForegroundColor Gray
+
+    # Already set?
+    $currentIP = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -eq $IPAddress }
+
+    if ($currentIP) {
+        Write-Host "    [=] IP already $IPAddress" -ForegroundColor DarkGray
+        Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $DNSServers
+        Write-Host "    [+] DNS: $($DNSServers -join ', ')" -ForegroundColor Green
+        return $true
+    }
+
+    # Disable DHCP first (prevents conflict when setting static IP)
+    try {
+        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -Dhcp Disabled -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    } catch {}
+
+    # Remove old IPs
+    Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike "169.254.*" } |
+        Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+    try { Remove-NetRoute -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue 2>$null } catch {}
+
+    try {
+        New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $IPAddress `
+            -PrefixLength $Prefix -DefaultGateway $GatewayAddr -ErrorAction Stop | Out-Null
+        Write-Host "    [+] IP: $IPAddress/$Prefix | Gateway: $GatewayAddr" -ForegroundColor Green
+    } catch {
+        try {
+            New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $IPAddress `
+                -PrefixLength $Prefix -ErrorAction Stop | Out-Null
+            Write-Host "    [+] IP: $IPAddress/$Prefix (no gateway)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed: $($_.Exception.Message)" -ForegroundColor Red
+            return $false
+        }
+    }
+
+    Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $DNSServers
+    Write-Host "    [+] DNS: $($DNSServers -join ', ')" -ForegroundColor Green
+
+    # Set network profile to Private (prevents firewall blocking lab traffic)
+    try {
+        Get-NetConnectionProfile -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue |
+            Where-Object { $_.NetworkCategory -eq "Public" } |
+            Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
+    } catch {}
+
+    # Allow ICMP (ping) through firewall
+    try {
+        New-NetFirewallRule -DisplayName "Lab-ICMP" -Direction Inbound -Protocol ICMPv4 `
+            -IcmpType 8 -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+    } catch {}
+
+    return $true
+}
+
+
+# ============================================================
+# HELPER: Auto-resume after reboot
+# ============================================================
+function Register-LabResume {
+    $scriptPath = "$labDir\Configure-Lab.ps1"
+    if (-not (Test-Path $scriptPath)) { return }
+
+    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
+    # Use Start-Process -Verb RunAs to ensure elevation on workstations
+    $cmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command `"Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -NoExit -File \`"$scriptPath\`"'`""
+    Set-ItemProperty -Path $regPath -Name "LabSetup" -Value $cmd -Force
+    Write-Host "    [+] Auto-resume registered (will continue at next login)" -ForegroundColor Green
+}
+
+function Unregister-LabResume {
+    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
+    Remove-ItemProperty -Path $regPath -Name "LabSetup" -ErrorAction SilentlyContinue
+}
+
+
+# ============================================================
+# HELPER: Wait for AD services after reboot
+# ============================================================
 function Wait-ForADReady {
-    # After a DC promotion reboot, AD services take time to start.
-    # This waits up to 120 seconds for the NTDS service and AD module.
     param([int]$MaxWaitSeconds = 120)
 
-    Write-Host "    [*] Waiting for Active Directory services to be ready..." -ForegroundColor Gray
+    Write-Host "    [*] Waiting for AD services..." -ForegroundColor Gray
     $waited = 0
     while ($waited -lt $MaxWaitSeconds) {
         $ntds = Get-Service -Name NTDS -ErrorAction SilentlyContinue
@@ -92,11 +296,9 @@ function Wait-ForADReady {
             try {
                 Import-Module ActiveDirectory -ErrorAction Stop
                 Get-ADDomain -ErrorAction Stop | Out-Null
-                Write-Host "    [+] AD services are ready (waited ${waited}s)" -ForegroundColor Green
+                Write-Host "    [+] AD is ready (waited ${waited}s)" -ForegroundColor Green
                 return $true
-            } catch {
-                # AD module loaded but domain not responsive yet
-            }
+            } catch {}
         }
         Start-Sleep -Seconds 5
         $waited += 5
@@ -104,17 +306,78 @@ function Wait-ForADReady {
             Write-Host "    [*] Still waiting... (${waited}s)" -ForegroundColor Gray
         }
     }
-    Write-Host "    [!] AD services did not become ready in ${MaxWaitSeconds}s" -ForegroundColor Red
+    Write-Host "    [!] AD not ready after ${MaxWaitSeconds}s" -ForegroundColor Red
     return $false
 }
 
+
+# ============================================================
+# HELPER: Disable Defender
+# ============================================================
+function Disable-WindowsDefender {
+    Write-Host "[*] Disabling Windows Defender..." -ForegroundColor Yellow
+
+    try {
+        $tamper = (Get-MpComputerStatus -ErrorAction Stop).IsTamperProtected
+        if ($tamper) {
+            Write-Host ""
+            Write-Host "    ============================================================" -ForegroundColor Red
+            Write-Host "    TAMPER PROTECTION IS ON" -ForegroundColor Red
+            Write-Host "    ============================================================" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "    Do this manually:" -ForegroundColor Yellow
+            Write-Host "      1. Open Windows Security" -ForegroundColor White
+            Write-Host "      2. Virus & threat protection -> Manage settings" -ForegroundColor White
+            Write-Host "      3. Turn OFF Tamper Protection" -ForegroundColor White
+            Write-Host "      4. Turn OFF Real-time protection" -ForegroundColor White
+            Write-Host "      5. Come back and press Enter" -ForegroundColor White
+            Write-Host ""
+            Read-Host "    Press Enter after disabling Tamper Protection"
+        }
+    } catch {}
+
+    try {
+        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Stop
+        Write-Host "    [+] Real-time protection disabled" -ForegroundColor Green
+    } catch {
+        Write-Host "    [!] Could not disable real-time: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    try {
+        Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
+    } catch {}
+
+    $defenderPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
+    if (-not (Test-Path $defenderPath)) { New-Item -Path $defenderPath -Force | Out-Null }
+    Set-ItemProperty -Path $defenderPath -Name "DisableAntiSpyware" -Value 1 -Type DWord -Force
+    $rtpPath = "$defenderPath\Real-Time Protection"
+    if (-not (Test-Path $rtpPath)) { New-Item -Path $rtpPath -Force | Out-Null }
+    Set-ItemProperty -Path $rtpPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWord -Force
+    Set-ItemProperty -Path $rtpPath -Name "DisableBehaviorMonitoring" -Value 1 -Type DWord -Force
+    Set-ItemProperty -Path $rtpPath -Name "DisableIOAVProtection" -Value 1 -Type DWord -Force
+    Set-ItemProperty -Path $rtpPath -Name "DisableScanOnRealtimeEnable" -Value 1 -Type DWord -Force
+    Write-Host "    [+] Defender registry policies set" -ForegroundColor Green
+
+    try {
+        Add-MpPreference -ExclusionPath "C:\Tools" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionPath "C:\LabSetup" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionPath "C:\Users" -ErrorAction SilentlyContinue
+        Write-Host "    [+] Exclusions added" -ForegroundColor Green
+    } catch {}
+}
+
+
+# ============================================================
+# HELPER: Service creation
+# ============================================================
 function Test-ServiceExists {
     param([string]$ServiceName)
     return [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
 }
 
 function New-LabService {
-    # Creates a Windows service if it does not already exist.
     param(
         [string]$Name,
         [string]$BinPath,
@@ -130,30 +393,15 @@ function New-LabService {
         sc.exe description $Name $Description 2>$null | Out-Null
         Write-Host "    [+] Service created: $Name" -ForegroundColor Green
     } else {
-        Write-Host "    [!] Failed to create service: $Name (exit code $LASTEXITCODE)" -ForegroundColor Yellow
+        Write-Host "    [!] Failed to create service: $Name" -ForegroundColor Yellow
     }
 }
 
-function Test-ACEExists {
-    # Check if a specific ACE already exists on an AD object.
-    param(
-        [string]$TargetDN,
-        [System.Security.Principal.SecurityIdentifier]$IdentitySID,
-        [string]$Rights
-    )
-    try {
-        $acl = Get-Acl "AD:\$TargetDN"
-        foreach ($ace in $acl.Access) {
-            if ($ace.IdentityReference -match $IdentitySID.Value -and $ace.ActiveDirectoryRights -match $Rights) {
-                return $true
-            }
-        }
-    } catch {}
-    return $false
-}
 
+# ============================================================
+# HELPER: ACL management
+# ============================================================
 function Set-LabACE {
-    # Add an ACE to an AD object, skipping if it already exists.
     param(
         [string]$TargetDN,
         [System.DirectoryServices.ActiveDirectoryAccessRule]$Rule,
@@ -161,14 +409,15 @@ function Set-LabACE {
     )
     try {
         $acl = Get-Acl "AD:\$TargetDN"
-        # Check for existing similar rule
         $exists = $false
         foreach ($ace in $acl.Access) {
-            $sidMatch = $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $Rule.IdentityReference.Value
-            if ($sidMatch -and $ace.ActiveDirectoryRights -eq $Rule.ActiveDirectoryRights) {
-                $exists = $true
-                break
-            }
+            try {
+                $sidMatch = $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $Rule.IdentityReference.Value
+                if ($sidMatch -and $ace.ActiveDirectoryRights -eq $Rule.ActiveDirectoryRights) {
+                    $exists = $true
+                    break
+                }
+            } catch {}
         }
         if ($exists) {
             Write-Host "    [=] ACE exists: $Label" -ForegroundColor DarkGray
@@ -182,145 +431,6 @@ function Set-LabACE {
     }
 }
 
-function Disable-WindowsDefender {
-    # Best-effort Defender disabling. Checks for Tamper Protection.
-    Write-Host "[*] Disabling Windows Defender..." -ForegroundColor Yellow
-
-    # Check Tamper Protection
-    try {
-        $tamper = (Get-MpComputerStatus -ErrorAction Stop).IsTamperProtected
-        if ($tamper) {
-            Write-Host ""
-            Write-Host "    ============================================================" -ForegroundColor Red
-            Write-Host "    TAMPER PROTECTION IS ON - MANUAL STEP NEEDED" -ForegroundColor Red
-            Write-Host "    ============================================================" -ForegroundColor Red
-            Write-Host ""
-            Write-Host "    Tamper Protection blocks this script from disabling Defender." -ForegroundColor Yellow
-            Write-Host "    Please do this manually:" -ForegroundColor Yellow
-            Write-Host "      1. Open Windows Security (search 'Windows Security' in Start)" -ForegroundColor White
-            Write-Host "      2. Click 'Virus & threat protection'" -ForegroundColor White
-            Write-Host "      3. Click 'Manage settings' under 'Virus & threat protection settings'" -ForegroundColor White
-            Write-Host "      4. Turn OFF 'Tamper Protection'" -ForegroundColor White
-            Write-Host "      5. Turn OFF 'Real-time protection'" -ForegroundColor White
-            Write-Host "      6. Come back here and press Enter to continue" -ForegroundColor White
-            Write-Host ""
-            Read-Host "    Press Enter after disabling Tamper Protection"
-        }
-    } catch {
-        # Defender might not be installed (Server Core), continue
-    }
-
-    try {
-        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Stop
-        Write-Host "    [+] Real-time protection disabled" -ForegroundColor Green
-    } catch {
-        Write-Host "    [!] Could not disable real-time protection: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-
-    try {
-        Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
-    } catch {}
-
-    # Registry-level disable (works after reboot if Tamper Protection is off)
-    $defenderPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
-    if (-not (Test-Path $defenderPath)) { New-Item -Path $defenderPath -Force | Out-Null }
-    Set-ItemProperty -Path $defenderPath -Name "DisableAntiSpyware" -Value 1 -Type DWord -Force
-    $rtpPath = "$defenderPath\Real-Time Protection"
-    if (-not (Test-Path $rtpPath)) { New-Item -Path $rtpPath -Force | Out-Null }
-    Set-ItemProperty -Path $rtpPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWord -Force
-    Set-ItemProperty -Path $rtpPath -Name "DisableBehaviorMonitoring" -Value 1 -Type DWord -Force
-    Set-ItemProperty -Path $rtpPath -Name "DisableIOAVProtection" -Value 1 -Type DWord -Force
-    Set-ItemProperty -Path $rtpPath -Name "DisableScanOnRealtimeEnable" -Value 1 -Type DWord -Force
-    Write-Host "    [+] Defender registry policies set (takes effect after reboot)" -ForegroundColor Green
-
-    # Add exclusions
-    try {
-        Add-MpPreference -ExclusionPath "C:\Tools" -ErrorAction SilentlyContinue
-        Add-MpPreference -ExclusionPath "C:\LabSetup" -ErrorAction SilentlyContinue
-        Add-MpPreference -ExclusionPath "C:\Users" -ErrorAction SilentlyContinue
-        Write-Host "    [+] Exclusions added: C:\Tools, C:\LabSetup, C:\Users" -ForegroundColor Green
-    } catch {}
-}
-
-function Set-LabStaticIP {
-    # Set a static IP on the first active adapter.
-    param(
-        [string]$IPAddress,
-        [int]$Prefix,
-        [string]$GatewayAddr,
-        [string[]]$DNSServers
-    )
-
-    Write-Host "`n[*] Configuring network..." -ForegroundColor Yellow
-
-    # Check if running via RDP (IP change would kill the session)
-    $rdpSession = Get-CimInstance Win32_LogonSession | Where-Object { $_.LogonType -eq 10 }
-    if ($rdpSession) {
-        Write-Host "    [!] WARNING: You appear to be connected via RDP." -ForegroundColor Red
-        Write-Host "    [!] Changing the IP will disconnect you." -ForegroundColor Red
-        Write-Host "    [!] Connect using the VM console (VMware/Hyper-V) instead." -ForegroundColor Red
-        $reply = Read-Host "    Continue anyway? (yes/no)"
-        if ($reply -ne "yes") {
-            Write-Host "    [*] Skipping IP change. Set the IP manually and re-run." -ForegroundColor Yellow
-            return
-        }
-    }
-
-    $adapter = Get-NetAdapter | Where-Object {
-        $_.Status -eq "Up" -and
-        $_.InterfaceDescription -notlike "*Loopback*" -and
-        $_.InterfaceDescription -notlike "*Bluetooth*"
-    } | Select-Object -First 1
-
-    if (-not $adapter) {
-        Write-Host "    [!] No active network adapter found." -ForegroundColor Red
-        Write-Host "    [!] Available adapters:" -ForegroundColor Yellow
-        Get-NetAdapter | Format-Table Name, Status, InterfaceDescription -AutoSize
-        Write-Host "    [!] Connect the host-only network adapter and try again." -ForegroundColor Yellow
-        Stop-Transcript
-        exit 1
-    }
-    Write-Host "    [*] Using adapter: $($adapter.Name) ($($adapter.InterfaceDescription))" -ForegroundColor Gray
-
-    # Get current IPs, filter out APIPA (169.254.x.x) and link-local
-    $currentIPs = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike "169.254.*" }
-    $hasCorrectIP = $currentIPs | Where-Object { $_.IPAddress -eq $IPAddress }
-
-    if (-not $hasCorrectIP) {
-        # Save stage file BEFORE changing IP (in case it kills the session)
-        Write-Host "    [*] Setting IP to $IPAddress/$Prefix..." -ForegroundColor Gray
-
-        # Remove existing IPv4 addresses (not APIPA)
-        $currentIPs | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
-        Remove-NetRoute -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
-
-        try {
-            New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $IPAddress `
-                -PrefixLength $Prefix -DefaultGateway $GatewayAddr -ErrorAction Stop | Out-Null
-            Write-Host "    [+] IP set to $IPAddress/$Prefix (gateway: $GatewayAddr)" -ForegroundColor Green
-        } catch {
-            # Gateway might not exist in host-only network, try without it
-            try {
-                New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $IPAddress `
-                    -PrefixLength $Prefix -ErrorAction Stop | Out-Null
-                Write-Host "    [+] IP set to $IPAddress/$Prefix (no gateway)" -ForegroundColor Green
-            } catch {
-                Write-Host "    [!] Failed to set IP: $($_.Exception.Message)" -ForegroundColor Red
-                Stop-Transcript
-                exit 1
-            }
-        }
-    } else {
-        Write-Host "    [=] IP already set to $IPAddress" -ForegroundColor DarkGray
-    }
-
-    # Set DNS
-    Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $DNSServers
-    Write-Host "    [+] DNS set to: $($DNSServers -join ', ')" -ForegroundColor Green
-}
 
 # ============================================================
 # ROLE AUTO-DETECTION
@@ -335,11 +445,13 @@ if (-not $Role) {
     Write-Host "[*] Auto-detected role: $Role" -ForegroundColor Cyan
 }
 
+
 # ============================================================
-# STAGE TRACKING (safe parsing)
+# STAGE TRACKING
 # ============================================================
 if ($Reset) {
     Remove-Item $stageFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $netConf -Force -ErrorAction SilentlyContinue
     Write-Host "[*] Progress reset. Starting from Stage 1." -ForegroundColor Yellow
 }
 
@@ -351,21 +463,48 @@ if (Test-Path $stageFile) {
     } elseif ($stageRaw -match '^\d+$') {
         $stage = [int]$stageRaw
     } else {
-        Write-Host "[!] Stage file is corrupted ('$stageRaw'). Resetting to Stage 1." -ForegroundColor Yellow
+        Write-Host "[!] Stage file corrupted. Resetting to Stage 1." -ForegroundColor Yellow
         $stage = 1
     }
 }
+
+
+# ============================================================
+# DETECT NETWORK
+# ============================================================
+Write-Host "`n[*] Network detection..." -ForegroundColor Yellow
+$net = Find-LabNetwork
+
+if (-not $net) {
+    Write-Host "    [!] Could not detect VMware NAT network." -ForegroundColor Red
+    Write-Host "    [!] Make sure:" -ForegroundColor Yellow
+    Write-Host "        - VM has a NAT network adapter" -ForegroundColor White
+    Write-Host "        - The adapter is connected and has an IP" -ForegroundColor White
+    Write-Host "        - Run 'ipconfig' to check" -ForegroundColor White
+    Stop-Transcript
+    exit 1
+}
+
+$DCIPAddress  = $net.DCIPAddress
+$WSIPAddress  = $net.WSIPAddress
+$Gateway      = $net.Gateway
+$SubnetPrefix = [int]$net.SubnetPrefix
+
 
 # ============================================================
 # BANNER
 # ============================================================
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "   ORSUBANK AD RED TEAM LAB V3" -ForegroundColor Cyan
+Write-Host "   ORSUBANK AD RED TEAM LAB V4" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host "  Machine:  $($env:COMPUTERNAME)" -ForegroundColor Gray
 Write-Host "  Role:     $Role" -ForegroundColor Gray
 Write-Host "  Stage:    $stage of 3" -ForegroundColor Gray
+Write-Host "  Network:  $($net.Subnet).0/24 (NAT)" -ForegroundColor Gray
+Write-Host "  DC IP:    $DCIPAddress" -ForegroundColor Gray
+Write-Host "  WS IP:    $WSIPAddress" -ForegroundColor Gray
+Write-Host "  Gateway:  $Gateway" -ForegroundColor Gray
 Write-Host "  Log:      $logFile" -ForegroundColor Gray
 Write-Host "  Time:     $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
 Write-Host "  ================================================================" -ForegroundColor Cyan
@@ -387,25 +526,22 @@ if ($Role -eq "DC") {
 
         Disable-WindowsDefender
 
-        # Save stage early (before IP change that could kill session)
+        # Save stage BEFORE IP change
         Set-Content -Path $stageFile -Value "2"
 
+        # Use gateway as DNS fallback (DC is not a DNS server yet in Stage 1)
         Set-LabStaticIP -IPAddress $DCIPAddress -Prefix $SubnetPrefix `
-            -GatewayAddr $Gateway -DNSServers @($DCIPAddress, "127.0.0.1")
+            -GatewayAddr $Gateway -DNSServers @("127.0.0.1", $Gateway)
 
-        # -- Install AD DS Feature --
+        # Install AD DS
         Write-Host "`n[*] Installing Active Directory Domain Services..." -ForegroundColor Yellow
         $addsFeature = Get-WindowsFeature AD-Domain-Services
         if (-not $addsFeature.Installed) {
             $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
             if ($result.Success) {
                 Write-Host "    [+] AD DS feature installed" -ForegroundColor Green
-                if ($result.RestartNeeded -eq "Yes") {
-                    Write-Host "    [*] Feature install requests a reboot (will happen at end of stage)" -ForegroundColor Gray
-                }
             } else {
-                Write-Host "    [!] AD DS install FAILED. Check Windows Update and disk space." -ForegroundColor Red
-                Write-Host "    [!] Try: Install-WindowsFeature AD-Domain-Services -IncludeManagementTools" -ForegroundColor Yellow
+                Write-Host "    [!] AD DS install FAILED." -ForegroundColor Red
                 Set-Content -Path $stageFile -Value "1"
                 Stop-Transcript
                 exit 1
@@ -414,15 +550,14 @@ if ($Role -eq "DC") {
             Write-Host "    [=] AD DS already installed" -ForegroundColor DarkGray
         }
 
-        # -- Rename Computer --
+        # Rename
         if ($env:COMPUTERNAME -ne $DCHostname) {
-            Write-Host "`n[*] Renaming computer to $DCHostname..." -ForegroundColor Yellow
+            Write-Host "`n[*] Renaming to $DCHostname..." -ForegroundColor Yellow
             try {
                 Rename-Computer -NewName $DCHostname -Force -ErrorAction Stop
                 Write-Host "    [+] Rename scheduled (takes effect after reboot)" -ForegroundColor Green
             } catch {
                 Write-Host "    [!] Rename failed: $($_.Exception.Message)" -ForegroundColor Yellow
-                Write-Host "    [!] You can rename manually: Rename-Computer -NewName $DCHostname -Force" -ForegroundColor Yellow
             }
         } else {
             Write-Host "`n[=] Hostname already $DCHostname" -ForegroundColor DarkGray
@@ -433,16 +568,13 @@ if ($Role -eq "DC") {
         Write-Host "   DC STAGE 1/3 COMPLETE" -ForegroundColor Green
         Write-Host "  ================================================================" -ForegroundColor Green
         Write-Host ""
-        Write-Host "  What to do next:" -ForegroundColor White
-        Write-Host "    1. Machine reboots in 5 seconds" -ForegroundColor White
-        Write-Host "    2. Log back in as Administrator" -ForegroundColor White
-        Write-Host "    3. Run:  .\Configure-Lab.ps1" -ForegroundColor White
-        Write-Host ""
-        Write-Host "  NOTE: DNS will not resolve external names until Stage 2" -ForegroundColor Gray
-        Write-Host "        completes (this is normal)." -ForegroundColor Gray
+        Write-Host "  Rebooting in 10 seconds..." -ForegroundColor White
+        Write-Host "  After reboot, the script will continue automatically." -ForegroundColor White
+        Write-Host "  If it does not, run:  .\Configure-Lab.ps1" -ForegroundColor Gray
         Write-Host ""
 
-        Start-Sleep -Seconds 5
+        Register-LabResume
+        Start-Sleep -Seconds 10
         Stop-Transcript
         Restart-Computer -Force
         exit 0
@@ -455,31 +587,32 @@ if ($Role -eq "DC") {
         Write-Host "[DC Stage 2/3] Promoting to Domain Controller..." -ForegroundColor Yellow
         Write-Host ""
         Write-Host "  Domain: $DomainFQDN" -ForegroundColor White
-        Write-Host "  This will reboot automatically after promotion." -ForegroundColor White
         Write-Host ""
 
-        # Check if already a DC
+        # Already a DC?
         $domainRoleCheck = (Get-CimInstance Win32_ComputerSystem).DomainRole
         if ($domainRoleCheck -in @(4, 5)) {
-            Write-Host "    [=] Already a Domain Controller. Skipping." -ForegroundColor DarkGray
+            Write-Host "    [=] Already a Domain Controller." -ForegroundColor DarkGray
             Set-Content -Path $stageFile -Value "3"
-            Write-Host "    [*] Run the script again for Stage 3." -ForegroundColor Yellow
+            Register-LabResume
+            Write-Host "    [*] Rebooting to continue with Stage 3..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 5
             Stop-Transcript
+            Restart-Computer -Force
             exit 0
         }
 
-        # Verify AD DS feature is installed (could have failed in Stage 1)
+        # Verify AD DS feature
         $addsCheck = Get-WindowsFeature AD-Domain-Services
         if (-not $addsCheck.Installed) {
-            Write-Host "    [!] AD DS feature is not installed. Installing now..." -ForegroundColor Yellow
+            Write-Host "    [!] AD DS not installed. Installing..." -ForegroundColor Yellow
             $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
             if (-not $result.Success) {
-                Write-Host "    [!] AD DS install failed. Cannot promote." -ForegroundColor Red
+                Write-Host "    [!] AD DS install failed." -ForegroundColor Red
                 Stop-Transcript
                 exit 1
             }
-            Write-Host "    [+] AD DS installed. Rebooting first, then re-run for promotion." -ForegroundColor Green
-            # Stay on stage 2 for next run
+            Register-LabResume
             Start-Sleep -Seconds 3
             Stop-Transcript
             Restart-Computer -Force
@@ -488,6 +621,7 @@ if ($Role -eq "DC") {
 
         # Save stage 3 BEFORE promotion (promotion auto-reboots)
         Set-Content -Path $stageFile -Value "3"
+        Register-LabResume
 
         $safeModePass = ConvertTo-SecureString $DSRMPassword -AsPlainText -Force
 
@@ -506,8 +640,7 @@ if ($Role -eq "DC") {
                 -NoRebootOnCompletion:$false `
                 -Force:$true
 
-            # Normally we never reach here (auto-reboot)
-            Write-Host "    [!] Promotion completed but no auto-reboot. Rebooting now..." -ForegroundColor Yellow
+            # Normally unreachable (auto-reboot)
             Stop-Transcript
             Restart-Computer -Force
         } catch {
@@ -515,30 +648,28 @@ if ($Role -eq "DC") {
             Write-Host "    [!] Promotion FAILED: $($_.Exception.Message)" -ForegroundColor Red
             Write-Host ""
             Write-Host "    Common fixes:" -ForegroundColor Yellow
-            Write-Host "      - If 'domain already exists': reboot and run script again" -ForegroundColor White
-            Write-Host "      - If 'access denied': make sure you are local Administrator" -ForegroundColor White
-            Write-Host "      - If 'prerequisite check failed': run the command manually:" -ForegroundColor White
-            Write-Host "        Install-ADDSForest -DomainName $DomainFQDN -InstallDns" -ForegroundColor Gray
+            Write-Host "      - 'domain already exists': reboot and run again" -ForegroundColor White
+            Write-Host "      - 'access denied': run as Administrator" -ForegroundColor White
             Write-Host ""
-            # CRITICAL: Reset to stage 2 so user can retry
             Set-Content -Path $stageFile -Value "2"
-            Write-Host "    [*] Stage reset to 2. Fix the issue and run the script again." -ForegroundColor Yellow
+            Write-Host "    [*] Stage reset to 2. Fix the issue and run again." -ForegroundColor Yellow
         }
         Stop-Transcript
         exit 0
     }
 
     # ========================================================
-    # DC STAGE 3: All Vulnerability Configuration
+    # DC STAGE 3: DNS Forwarder + All Vulnerability Config
     # ========================================================
     if ($stage -eq 3) {
-        Write-Host "[DC Stage 3/3] Configuring all attack paths..." -ForegroundColor Yellow
+        Write-Host "[DC Stage 3/3] Configuring domain and attack paths..." -ForegroundColor Yellow
         Write-Host ""
 
-        # Wait for AD to be fully ready after promotion reboot
+        Unregister-LabResume
+
+        # Wait for AD
         if (-not (Wait-ForADReady -MaxWaitSeconds 120)) {
-            Write-Host "    [!] AD is not responding. The DC might still be initializing." -ForegroundColor Red
-            Write-Host "    [!] Wait a minute, then run the script again." -ForegroundColor Yellow
+            Write-Host "    [!] AD not responding. Wait a minute and run again." -ForegroundColor Red
             Stop-Transcript
             exit 1
         }
@@ -548,15 +679,39 @@ if ($Role -eq "DC") {
         $employeesOU = "OU=BankEmployees,$domain"
         $serviceOU = "OU=ServiceAccounts,$domain"
 
+        # ---- DNS FORWARDER (keeps internet working) ----
+        Write-Host "[0/10] Setting DNS forwarder for internet access..." -ForegroundColor Yellow
+        try {
+            $currentForwarders = (Get-DnsServerForwarder -ErrorAction SilentlyContinue).IPAddress
+            $needsForwarder = $true
+            if ($currentForwarders) {
+                foreach ($f in $currentForwarders) {
+                    if ($f.ToString() -eq $Gateway -or $f.ToString() -eq "8.8.8.8") {
+                        $needsForwarder = $false
+                        break
+                    }
+                }
+            }
+            if ($needsForwarder) {
+                Add-DnsServerForwarder -IPAddress $Gateway -ErrorAction SilentlyContinue
+                Add-DnsServerForwarder -IPAddress "8.8.8.8" -ErrorAction SilentlyContinue
+                Write-Host "    [+] DNS forwarders: $Gateway, 8.8.8.8 (internet will work)" -ForegroundColor Green
+            } else {
+                Write-Host "    [=] DNS forwarders already set" -ForegroundColor DarkGray
+            }
+        } catch {
+            Write-Host "    [!] DNS forwarder error: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
         # ---- 1/10: OUs ----
-        Write-Host "[1/10] Creating Organizational Units..." -ForegroundColor Yellow
+        Write-Host "`n[1/10] Creating Organizational Units..." -ForegroundColor Yellow
         @("BankEmployees", "ServiceAccounts", "Workstations") | ForEach-Object {
             if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$_'" -SearchBase $domain -ErrorAction SilentlyContinue)) {
                 try {
                     New-ADOrganizationalUnit -Name $_ -Path $domain -ProtectedFromAccidentalDeletion $false -ErrorAction Stop
                     Write-Host "    [+] Created OU: $_" -ForegroundColor Green
                 } catch {
-                    Write-Host "    [!] Failed to create OU $_: $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Host "    [!] Failed OU $_: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
             } else {
                 Write-Host "    [=] OU exists: $_" -ForegroundColor DarkGray
@@ -732,7 +887,7 @@ if ($Role -eq "DC") {
         Add-ADGroupMember -Identity "Server_Admins" -Members "IT_Support" -ErrorAction SilentlyContinue
         Add-ADGroupMember -Identity "Domain Admins" -Members "Server_Admins" -ErrorAction SilentlyContinue
         Add-ADGroupMember -Identity "HelpDesk_Team" -Members "harsha.vardhan" -ErrorAction SilentlyContinue
-        Write-Host "    [+] Nested chain: harsha.vardhan -> HelpDesk -> IT_Support -> Server_Admins -> DA" -ForegroundColor Green
+        Write-Host "    [+] Chain: harsha.vardhan -> HelpDesk -> IT_Support -> Server_Admins -> DA" -ForegroundColor Green
 
         # svc_backup: DA with SPN
         $svcBackupPass = ConvertTo-SecureString "Backup@2024!" -AsPlainText -Force
@@ -763,11 +918,11 @@ if ($Role -eq "DC") {
             Set-LabACE -TargetDN $domainDN -Rule $ace2 -Label "DCSync (Get-Changes-All) for WS01$"
         } else {
             $skippedWS01Items += "DCSync rights"
-            Write-Host "    [!] WS01 not in domain yet. DCSync rights skipped." -ForegroundColor Yellow
+            Write-Host "    [!] WS01 not joined yet. DCSync rights skipped." -ForegroundColor Yellow
         }
 
         # ---- 7/10: Delegation ----
-        Write-Host "`n[7/10] Configuring delegation vulnerabilities..." -ForegroundColor Yellow
+        Write-Host "`n[7/10] Configuring delegation..." -ForegroundColor Yellow
 
         if ($ws01) {
             Set-ADComputer -Identity "WS01" -TrustedForDelegation $true
@@ -786,7 +941,6 @@ if ($Role -eq "DC") {
                 -PasswordNeverExpires $true -Description "Web Application Service"
         }
         Set-ADUser -Identity "svc_web" -ServicePrincipalNames @{Add="HTTP/intranet.orsubank.local"} -ErrorAction SilentlyContinue
-        # Use -Replace to be idempotent (not -Add which fails on re-run)
         Set-ADUser -Identity "svc_web" -Replace @{
             "msDS-AllowedToDelegateTo" = @("CIFS/DC01.orsubank.local", "CIFS/DC01")
         } -ErrorAction SilentlyContinue
@@ -808,7 +962,6 @@ if ($Role -eq "DC") {
         # ---- 8/10: ADCS ----
         Write-Host "`n[8/10] Installing AD Certificate Services..." -ForegroundColor Yellow
 
-        # Scope ADCS variables outside try blocks
         $configNC = $null
         $domainUsersSID = $null
         $enrollGuid = [GUID]"0e10c968-78fb-11d2-90d4-00c04f79dc55"
@@ -818,16 +971,14 @@ if ($Role -eq "DC") {
 
         $adcsInstalled = (Get-WindowsFeature ADCS-Cert-Authority).Installed
         if (-not $adcsInstalled) {
-            Write-Host "    [*] Installing ADCS features (this takes a few minutes)..." -ForegroundColor Gray
+            Write-Host "    [*] Installing ADCS (takes a few minutes)..." -ForegroundColor Gray
             $result = Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment -IncludeManagementTools
             if ($result.Success) {
                 Write-Host "    [+] ADCS features installed" -ForegroundColor Green
             } else {
-                Write-Host "    [!] ADCS feature install failed. ADCS attacks won't work." -ForegroundColor Red
+                Write-Host "    [!] ADCS install failed." -ForegroundColor Red
             }
 
-            # Wait for IIS to be ready
-            Write-Host "    [*] Starting IIS..." -ForegroundColor Gray
             Start-Service W3SVC -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 5
 
@@ -855,12 +1006,11 @@ if ($Role -eq "DC") {
 
         # ESC1: User template allows SAN
         if ($configNC) {
-            Write-Host "    [*] Configuring ESC1 (enrollee supplies subject)..." -ForegroundColor Gray
+            Write-Host "    [*] Configuring ESC1..." -ForegroundColor Gray
             try {
                 $userTemplateDN = "CN=User,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
-                # Verify template exists
                 if (-not (Get-ADObject -Identity $userTemplateDN -ErrorAction SilentlyContinue)) {
-                    Write-Host "    [!] ESC1: User template not found. Is this an Enterprise CA?" -ForegroundColor Yellow
+                    Write-Host "    [!] ESC1: User template not found." -ForegroundColor Yellow
                 } else {
                     $templateObj = [ADSI]"LDAP://$userTemplateDN"
                     $currentFlags = $templateObj.Properties["msPKI-Certificate-Name-Flag"].Value
@@ -886,7 +1036,7 @@ if ($Role -eq "DC") {
             }
 
             # ESC4: vamsi.krishna has GenericWrite on WebServer template
-            Write-Host "    [*] Configuring ESC4 (writable template)..." -ForegroundColor Gray
+            Write-Host "    [*] Configuring ESC4..." -ForegroundColor Gray
             try {
                 $webTemplateDN = "CN=WebServer,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
                 if (-not (Get-ADObject -Identity $webTemplateDN -ErrorAction SilentlyContinue)) {
@@ -917,11 +1067,11 @@ if ($Role -eq "DC") {
                 Write-Host "    [!] ESC4 error: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         } else {
-            Write-Host "    [!] Could not read AD configuration. ESC1/ESC4 skipped." -ForegroundColor Yellow
+            Write-Host "    [!] Could not read AD config. ESC1/ESC4 skipped." -ForegroundColor Yellow
         }
 
         # ESC8: Web Enrollment without SSL or EPA
-        Write-Host "    [*] Configuring ESC8 (HTTP relay target)..." -ForegroundColor Gray
+        Write-Host "    [*] Configuring ESC8..." -ForegroundColor Gray
         try {
             Import-Module WebAdministration -ErrorAction Stop
             Set-WebConfigurationProperty `
@@ -939,7 +1089,6 @@ if ($Role -eq "DC") {
             Write-Host "    [+] ESC8: NTLM relay to Web Enrollment (no SSL, no EPA)" -ForegroundColor Green
         } catch {
             Write-Host "    [!] ESC8 error: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "    [!] If IIS is not ready, reboot and re-run: .\Configure-Lab.ps1 -Role DC -Reset" -ForegroundColor Yellow
         }
 
         # ---- 9/10: Credential Exposure ----
@@ -959,7 +1108,7 @@ if ($Role -eq "DC") {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LsaCfgFlags" -Value 0 -Type DWord -Force
         Write-Host "    [+] Credential Guard disabled" -ForegroundColor Green
 
-        # Plant files
+        # Plant credential files
         @("C:\IT", "C:\Backup", "C:\Scripts") | ForEach-Object {
             New-Item -Path $_ -ItemType Directory -Force | Out-Null
         }
@@ -1027,39 +1176,40 @@ KEEP SECURE - AUDIT ANNUALLY
         Start-Service -Name Spooler -ErrorAction SilentlyContinue
         $spoolerStatus = (Get-Service -Name Spooler -ErrorAction SilentlyContinue).Status
         if ($spoolerStatus -eq "Running") {
-            Write-Host "    [+] Print Spooler running (verified)" -ForegroundColor Green
+            Write-Host "    [+] Print Spooler running" -ForegroundColor Green
         } else {
-            Write-Host "    [!] Print Spooler is not running (status: $spoolerStatus)" -ForegroundColor Yellow
+            Write-Host "    [!] Print Spooler not running ($spoolerStatus)" -ForegroundColor Yellow
         }
 
         # ---- VERIFICATION ----
         Write-Host "`n[*] Running verification checks..." -ForegroundColor Cyan
         $passed = 0; $failed = 0
 
-        # Check users
         $userCount = (Get-ADUser -Filter * -SearchBase $employeesOU -ErrorAction SilentlyContinue | Measure-Object).Count
-        if ($userCount -ge 10) { Write-Host "    [OK] $userCount domain users in BankEmployees" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] Only $userCount users found (expected 10)" -ForegroundColor Red; $failed++ }
+        if ($userCount -ge 10) { Write-Host "    [OK] $userCount domain users" -ForegroundColor Green; $passed++ }
+        else { Write-Host "    [FAIL] Only $userCount users (expected 10)" -ForegroundColor Red; $failed++ }
 
-        # Check SPNs
         $spnCount = (Get-ADUser -Filter {ServicePrincipalName -like "*"} -Properties ServicePrincipalName -ErrorAction SilentlyContinue | Measure-Object).Count
-        if ($spnCount -ge 5) { Write-Host "    [OK] $spnCount accounts with SPNs" -ForegroundColor Green; $passed++ }
+        if ($spnCount -ge 5) { Write-Host "    [OK] $spnCount SPN accounts" -ForegroundColor Green; $passed++ }
         else { Write-Host "    [FAIL] Only $spnCount SPN accounts (expected 5+)" -ForegroundColor Red; $failed++ }
 
-        # Check AS-REP
         $asrepCount = (Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true} -ErrorAction SilentlyContinue | Measure-Object).Count
-        if ($asrepCount -ge 3) { Write-Host "    [OK] $asrepCount AS-REP roastable accounts" -ForegroundColor Green; $passed++ }
+        if ($asrepCount -ge 3) { Write-Host "    [OK] $asrepCount AS-REP roastable" -ForegroundColor Green; $passed++ }
         else { Write-Host "    [FAIL] Only $asrepCount AS-REP accounts (expected 3)" -ForegroundColor Red; $failed++ }
 
-        # Check ADCS
         $caService = Get-Service -Name CertSvc -ErrorAction SilentlyContinue
-        if ($caService -and $caService.Status -eq "Running") { Write-Host "    [OK] Certificate Authority is running" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] CA service not running" -ForegroundColor Red; $failed++ }
+        if ($caService -and $caService.Status -eq "Running") { Write-Host "    [OK] Certificate Authority running" -ForegroundColor Green; $passed++ }
+        else { Write-Host "    [FAIL] CA not running" -ForegroundColor Red; $failed++ }
+
+        # Test internet (DNS forwarder)
+        $internetOK = Test-Connection 8.8.8.8 -Count 1 -Quiet -ErrorAction SilentlyContinue
+        if ($internetOK) { Write-Host "    [OK] Internet access works" -ForegroundColor Green; $passed++ }
+        else { Write-Host "    [WARN] No internet (check gateway $Gateway)" -ForegroundColor Yellow }
 
         Write-Host ""
         Write-Host "    Verification: $passed passed, $failed failed" -ForegroundColor $(if ($failed -eq 0) {"Green"} else {"Yellow"})
 
-        # ---- Mark Complete ----
+        # Mark complete
         Set-Content -Path $stageFile -Value "done"
 
         Write-Host ""
@@ -1074,6 +1224,12 @@ KEEP SECURE - AUDIT ANNUALLY
         }
         Write-Host "  [!] Reboot DC01 for WDigest/LSA changes." -ForegroundColor Yellow
         Write-Host "  [!] Next: Run this script on WS01." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Kali setup:" -ForegroundColor White
+        Write-Host "    Your Kali VM also uses NAT. It gets internet automatically." -ForegroundColor Gray
+        Write-Host "    For a static IP (optional), run on Kali:" -ForegroundColor Gray
+        Write-Host "      sudo ip addr add $($net.KaliIPAddress)/24 dev eth0" -ForegroundColor White
+        Write-Host "    Set DNS to DC: echo 'nameserver $DCIPAddress' | sudo tee /etc/resolv.conf" -ForegroundColor White
         Write-Host ""
     }
 
@@ -1099,7 +1255,7 @@ if ($Role -eq "WS") {
 
         Disable-WindowsDefender
 
-        # Save stage early (before IP change)
+        # Save stage BEFORE IP change
         Set-Content -Path $stageFile -Value "2"
 
         Set-LabStaticIP -IPAddress $WSIPAddress -Prefix $SubnetPrefix `
@@ -1107,7 +1263,7 @@ if ($Role -eq "WS") {
 
         # Rename
         if ($env:COMPUTERNAME -ne $WSHostname) {
-            Write-Host "`n[*] Renaming computer to $WSHostname..." -ForegroundColor Yellow
+            Write-Host "`n[*] Renaming to $WSHostname..." -ForegroundColor Yellow
             try {
                 Rename-Computer -NewName $WSHostname -Force -ErrorAction Stop
                 Write-Host "    [+] Rename scheduled for after reboot" -ForegroundColor Green
@@ -1123,14 +1279,13 @@ if ($Role -eq "WS") {
         Write-Host "   WS STAGE 1/3 COMPLETE" -ForegroundColor Green
         Write-Host "  ================================================================" -ForegroundColor Green
         Write-Host ""
-        Write-Host "  What to do next:" -ForegroundColor White
-        Write-Host "    1. Machine reboots in 5 seconds" -ForegroundColor White
-        Write-Host "    2. Log back in as Administrator" -ForegroundColor White
-        Write-Host "    3. Make sure DC01 is running (ping $DCIPAddress)" -ForegroundColor White
-        Write-Host "    4. Run:  .\Configure-Lab.ps1" -ForegroundColor White
+        Write-Host "  Rebooting in 10 seconds..." -ForegroundColor White
+        Write-Host "  After reboot, the script continues automatically." -ForegroundColor White
+        Write-Host "  Make sure DC01 is running and fully set up first." -ForegroundColor Yellow
         Write-Host ""
 
-        Start-Sleep -Seconds 5
+        Register-LabResume
+        Start-Sleep -Seconds 10
         Stop-Transcript
         Restart-Computer -Force
         exit 0
@@ -1148,67 +1303,65 @@ if ($Role -eq "WS") {
         if ($cs.PartOfDomain -and $cs.Domain -eq $DomainFQDN) {
             Write-Host "    [=] Already joined to $DomainFQDN." -ForegroundColor DarkGray
             Set-Content -Path $stageFile -Value "3"
-            Write-Host "    [*] Run the script again for Stage 3." -ForegroundColor Yellow
+            Register-LabResume
+            Start-Sleep -Seconds 3
             Stop-Transcript
+            Restart-Computer -Force
             exit 0
         }
 
-        # Test DC reachability (ICMP)
+        # Test DC
         Write-Host "    [*] Testing connection to DC01 ($DCIPAddress)..." -ForegroundColor Gray
         if (-not (Test-Connection $DCIPAddress -Count 2 -Quiet)) {
-            Write-Host "    [!] Cannot ping DC01 at $DCIPAddress" -ForegroundColor Red
+            Write-Host "    [!] Cannot reach DC01 at $DCIPAddress" -ForegroundColor Red
             Write-Host "    [!] Check:" -ForegroundColor Yellow
             Write-Host "        - Is DC01 powered on?" -ForegroundColor White
-            Write-Host "        - Did DC01 complete Stage 2 (domain promotion)?" -ForegroundColor White
-            Write-Host "        - Is the network adapter connected?" -ForegroundColor White
-            Write-Host "        - Is WS01's DNS set to $DCIPAddress?" -ForegroundColor White
+            Write-Host "        - Did DC01 complete all 3 stages?" -ForegroundColor White
+            Write-Host "        - Both VMs using NAT adapter?" -ForegroundColor White
             Stop-Transcript
             exit 1
         }
-        Write-Host "    [+] DC01 is reachable (ping OK)" -ForegroundColor Green
+        Write-Host "    [+] DC01 reachable" -ForegroundColor Green
 
-        # Test DNS resolution
-        Write-Host "    [*] Testing DNS resolution of $DomainFQDN..." -ForegroundColor Gray
+        # Test DNS
+        Write-Host "    [*] Testing DNS resolution..." -ForegroundColor Gray
         try {
             $dnsResult = Resolve-DnsName $DomainFQDN -ErrorAction Stop
             Write-Host "    [+] DNS resolves $DomainFQDN -> $($dnsResult[0].IPAddress)" -ForegroundColor Green
         } catch {
             Write-Host "    [!] DNS cannot resolve $DomainFQDN" -ForegroundColor Red
-            Write-Host "    [!] Check that WS01's DNS is set to $DCIPAddress" -ForegroundColor Yellow
-            Write-Host "    [!] Run: Set-DnsClientServerAddress -InterfaceIndex (Get-NetAdapter | Select -First 1).ifIndex -ServerAddresses '$DCIPAddress'" -ForegroundColor Gray
+            Write-Host "    [!] WS01 DNS must point to $DCIPAddress" -ForegroundColor Yellow
             Stop-Transcript
             exit 1
         }
 
-        # Ask for credentials explicitly (not rely on -Force which tries null creds)
+        # Join domain
         Write-Host ""
-        Write-Host "  Enter domain admin credentials to join the domain:" -ForegroundColor White
+        Write-Host "  Enter domain admin credentials:" -ForegroundColor White
         Write-Host "    Username: $DomainNetBIOS\Administrator" -ForegroundColor White
-        Write-Host "    Password: (the password you set when installing Windows Server on DC01)" -ForegroundColor White
+        Write-Host "    Password: (the one you set on DC01 during Windows install)" -ForegroundColor White
         Write-Host ""
 
         try {
-            $cred = Get-Credential -Message "Enter $DomainNetBIOS\Administrator password to join domain" `
+            $cred = Get-Credential -Message "Enter $DomainNetBIOS\Administrator password" `
                 -UserName "$DomainNetBIOS\Administrator"
 
             Add-Computer -DomainName $DomainFQDN -Credential $cred -Force -ErrorAction Stop
 
-            # If we get here, join succeeded. Save stage and reboot.
             Set-Content -Path $stageFile -Value "3"
             Write-Host "    [+] Domain join successful! Rebooting..." -ForegroundColor Green
-            Start-Sleep -Seconds 3
+            Register-LabResume
+            Start-Sleep -Seconds 5
             Stop-Transcript
             Restart-Computer -Force
         } catch {
             Write-Host "    [!] Domain join FAILED: $($_.Exception.Message)" -ForegroundColor Red
             Write-Host ""
-            Write-Host "    Common fixes:" -ForegroundColor Yellow
+            Write-Host "    Fixes:" -ForegroundColor Yellow
             Write-Host "      - Wrong password: try again" -ForegroundColor White
-            Write-Host "      - 'RPC server unavailable': DC01 firewall may be blocking" -ForegroundColor White
-            Write-Host "      - 'Domain not found': check DNS (nslookup $DomainFQDN)" -ForegroundColor White
+            Write-Host "      - 'RPC unavailable': check DC01 firewall" -ForegroundColor White
+            Write-Host "      - 'Domain not found': run nslookup $DomainFQDN" -ForegroundColor White
             Write-Host ""
-            Write-Host "    Stage stays at 2. Fix the issue and run the script again." -ForegroundColor Yellow
-            # Stage stays at 2 (we didn't save 3 yet)
         }
         Stop-Transcript
         exit 0
@@ -1218,18 +1371,25 @@ if ($Role -eq "WS") {
     # WS STAGE 3: All Vulnerability Configuration
     # ========================================================
     if ($stage -eq 3) {
-        Write-Host "[WS Stage 3/3] Configuring all attack paths..." -ForegroundColor Yellow
+        Write-Host "[WS Stage 3/3] Configuring attack paths..." -ForegroundColor Yellow
         Write-Host ""
 
-        # Force network profile to Private (PSRemoting fails on Public)
-        Write-Host "[*] Setting network profile to Private..." -ForegroundColor Yellow
+        Unregister-LabResume
+
+        # Network profile to Private
+        Write-Host "[*] Setting network profile..." -ForegroundColor Yellow
         try {
             Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -ne "DomainAuthenticated" } |
                 Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
             Write-Host "    [+] Network profile set to Private" -ForegroundColor Green
         } catch {
-            Write-Host "    [=] Could not change network profile (may already be domain)" -ForegroundColor DarkGray
+            Write-Host "    [=] Network profile already correct" -ForegroundColor DarkGray
         }
+
+        # Pre-create shared ACL rule (used across multiple sections)
+        $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "Everyone", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
+        )
 
         # ---- 1/4: Local Privilege Escalation ----
         Write-Host "`n[1/4] Configuring local privilege escalation..." -ForegroundColor Yellow
@@ -1255,9 +1415,7 @@ if ($Role -eq "WS") {
         $weakPath = "C:\Services\VulnService"
         New-Item -Path $weakPath -ItemType Directory -Force | Out-Null
         Copy-Item "C:\Windows\System32\notepad.exe" "$weakPath\vulnservice.exe" -Force
-        $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            "Everyone", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
-        )
+        # ($everyoneRule already created at top of Stage 3)
         $acl = Get-Acl $weakPath; $acl.AddAccessRule($everyoneRule); Set-Acl $weakPath $acl
         $acl = Get-Acl "$weakPath\vulnservice.exe"; $acl.AddAccessRule($everyoneRule); Set-Acl "$weakPath\vulnservice.exe" $acl
         New-LabService -Name "VulnService" -BinPath "$weakPath\vulnservice.exe" `
@@ -1273,9 +1431,7 @@ if ($Role -eq "WS") {
             $regRule = New-Object System.Security.AccessControl.RegistryAccessRule("Everyone", "FullControl", "Allow")
             $regAcl.AddAccessRule($regRule)
             Set-Acl $regPath $regAcl
-            Write-Host "    [+] Weak registry ACL set on RegHijackService" -ForegroundColor Green
-        } else {
-            Write-Host "    [!] RegHijackService registry key not found (service creation may have failed)" -ForegroundColor Yellow
+            Write-Host "    [+] Weak registry ACL on RegHijackService" -ForegroundColor Green
         }
 
         # Stored AutoLogon
@@ -1284,7 +1440,7 @@ if ($Role -eq "WS") {
         Set-ItemProperty -Path $winlogonPath -Name "DefaultPassword" -Value "AutoLogon@2024!"
         Set-ItemProperty -Path $winlogonPath -Name "DefaultDomainName" -Value $DomainNetBIOS
         Set-ItemProperty -Path $winlogonPath -Name "AutoAdminLogon" -Value "0"
-        Write-Host "    [+] Stored AutoLogon: svc_autologon / AutoLogon@2024!" -ForegroundColor Green
+        Write-Host "    [+] Stored AutoLogon creds: svc_autologon / AutoLogon@2024!" -ForegroundColor Green
 
         # Vulnerable Scheduled Task
         New-Item -Path "C:\ScheduledTasks" -ItemType Directory -Force | Out-Null
@@ -1309,7 +1465,6 @@ if ($Role -eq "WS") {
             Write-Host "    [+] PSRemoting enabled" -ForegroundColor Green
         } catch {
             Write-Host "    [!] PSRemoting failed: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "    [!] Try changing network profile to Private first" -ForegroundColor Yellow
         }
 
         Set-Service -Name WinRM -StartupType Automatic -ErrorAction SilentlyContinue
@@ -1346,7 +1501,7 @@ if ($Role -eq "WS") {
                 Add-LocalGroupMember -Group "Administrators" -Member "localadmin" -ErrorAction Stop
                 Write-Host "    [+] Local admin: localadmin / LocalAdmin123!" -ForegroundColor Green
             } catch {
-                Write-Host "    [!] Failed to create localadmin: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "    [!] Failed: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         } else {
             Write-Host "    [=] localadmin exists" -ForegroundColor DarkGray
@@ -1421,36 +1576,36 @@ if ($Role -eq "WS") {
             Start-Service -Name WebClient -ErrorAction SilentlyContinue
             $wcStatus = (Get-Service WebClient).Status
             if ($wcStatus -eq "Running") {
-                Write-Host "    [+] WebClient running (verified)" -ForegroundColor Green
+                Write-Host "    [+] WebClient running" -ForegroundColor Green
             } else {
                 Write-Host "    [!] WebClient status: $wcStatus" -ForegroundColor Yellow
             }
         } else {
-            Write-Host "    [!] WebClient not available. Install Desktop Experience if needed." -ForegroundColor Yellow
+            Write-Host "    [!] WebClient not available" -ForegroundColor Yellow
         }
 
         # ---- VERIFICATION ----
         Write-Host "`n[*] Running verification checks..." -ForegroundColor Cyan
         $passed = 0; $failed = 0
 
-        if (Test-ServiceExists "ORSUUpdateService") { Write-Host "    [OK] ORSUUpdateService exists" -ForegroundColor Green; $passed++ }
+        if (Test-ServiceExists "ORSUUpdateService") { Write-Host "    [OK] ORSUUpdateService" -ForegroundColor Green; $passed++ }
         else { Write-Host "    [FAIL] ORSUUpdateService missing" -ForegroundColor Red; $failed++ }
 
-        if (Test-ServiceExists "VulnService") { Write-Host "    [OK] VulnService exists" -ForegroundColor Green; $passed++ }
+        if (Test-ServiceExists "VulnService") { Write-Host "    [OK] VulnService" -ForegroundColor Green; $passed++ }
         else { Write-Host "    [FAIL] VulnService missing" -ForegroundColor Red; $failed++ }
 
         $aie = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
-        if ($aie -and $aie.AlwaysInstallElevated -eq 1) { Write-Host "    [OK] AlwaysInstallElevated is on" -ForegroundColor Green; $passed++ }
+        if ($aie -and $aie.AlwaysInstallElevated -eq 1) { Write-Host "    [OK] AlwaysInstallElevated" -ForegroundColor Green; $passed++ }
         else { Write-Host "    [FAIL] AlwaysInstallElevated not set" -ForegroundColor Red; $failed++ }
 
         $winrmStatus = (Get-Service WinRM -ErrorAction SilentlyContinue).Status
         if ($winrmStatus -eq "Running") { Write-Host "    [OK] WinRM running" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] WinRM not running ($winrmStatus)" -ForegroundColor Red; $failed++ }
+        else { Write-Host "    [FAIL] WinRM not running" -ForegroundColor Red; $failed++ }
 
         Write-Host ""
         Write-Host "    Verification: $passed passed, $failed failed" -ForegroundColor $(if ($failed -eq 0) {"Green"} else {"Yellow"})
 
-        # ---- Mark Complete ----
+        # Mark complete
         Set-Content -Path $stageFile -Value "done"
 
         Write-Host ""
@@ -1459,7 +1614,10 @@ if ($Role -eq "WS") {
         Write-Host "  ================================================================" -ForegroundColor Green
         Write-Host ""
         Write-Host "  [!] Reboot WS01 for WDigest/LSA changes." -ForegroundColor Yellow
-        Write-Host "  [!] After reboot, start attacking from Kali." -ForegroundColor Yellow
+        Write-Host "  [!] Then re-run on DC01: .\Configure-Lab.ps1 -Role DC -Reset" -ForegroundColor Yellow
+        Write-Host "      (to configure WS01-dependent items like DCSync, RBCD)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  [!] After that, start attacking from Kali!" -ForegroundColor Yellow
         Write-Host ""
     }
 
