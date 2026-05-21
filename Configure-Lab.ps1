@@ -269,9 +269,14 @@ function Register-LabResume {
     $scriptPath = "$labDir\Configure-Lab.ps1"
     if (-not (Test-Path $scriptPath)) { return }
 
+    # Save current role so it persists across reboots
+    $roleFile = "$labDir\role.txt"
+    if ($Role) { Set-Content -Path $roleFile -Value $Role -Force }
+
     $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
     # Use Start-Process -Verb RunAs to ensure elevation on workstations
-    $cmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command `"Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -NoExit -File \`"$scriptPath\`"'`""
+    # Pass -Role so the menu does not show again after reboot
+    $cmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command `"Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -NoExit -File \`"$scriptPath\`" -Role $Role'`""
     Set-ItemProperty -Path $regPath -Name "LabSetup" -Value $cmd -Force
     Write-Host "    [+] Auto-resume registered (will continue at next login)" -ForegroundColor Green
 }
@@ -433,16 +438,50 @@ function Set-LabACE {
 
 
 # ============================================================
-# ROLE AUTO-DETECTION
+# ROLE SELECTION
 # ============================================================
 if (-not $Role) {
+    # If already a DC, skip the menu
     $domainRole = (Get-CimInstance Win32_ComputerSystem).DomainRole
     if ($domainRole -in @(4, 5)) {
         $Role = "DC"
+        Write-Host "[*] Detected: This machine is already a Domain Controller." -ForegroundColor Cyan
     } else {
-        $Role = "WS"
+        # Check if role was saved from a previous run
+        $roleFile = "$labDir\role.txt"
+        if (Test-Path $roleFile) {
+            $savedRole = (Get-Content $roleFile -Raw).Trim().ToUpper()
+            if ($savedRole -eq "DC" -or $savedRole -eq "WS") {
+                $Role = $savedRole
+                Write-Host "[*] Using saved role: $Role (from previous run)" -ForegroundColor Cyan
+            }
+        }
+
+        # If still no role, show menu
+        if (-not $Role) {
+            Write-Host ""
+            Write-Host "  ============================================================" -ForegroundColor Cyan
+            Write-Host "   WHAT IS THIS MACHINE?" -ForegroundColor Cyan
+            Write-Host "  ============================================================" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "    [D] Domain Controller  (DC01 - Windows Server)" -ForegroundColor White
+            Write-Host "    [W] Workstation        (WS01 - Windows 10/11)" -ForegroundColor White
+            Write-Host ""
+            do {
+                $choice = Read-Host "  Press D or W"
+                $choice = $choice.Trim().ToUpper()
+            } while ($choice -ne "D" -and $choice -ne "W")
+
+            if ($choice -eq "D") { $Role = "DC" }
+            else { $Role = "WS" }
+
+            # Save choice for future runs
+            Set-Content -Path "$labDir\role.txt" -Value $Role -Force
+
+            Write-Host ""
+            Write-Host "[*] Selected role: $Role" -ForegroundColor Cyan
+        }
     }
-    Write-Host "[*] Auto-detected role: $Role" -ForegroundColor Cyan
 }
 
 
@@ -452,6 +491,7 @@ if (-not $Role) {
 if ($Reset) {
     Remove-Item $stageFile -Force -ErrorAction SilentlyContinue
     Remove-Item $netConf -Force -ErrorAction SilentlyContinue
+    Remove-Item "$labDir\role.txt" -Force -ErrorAction SilentlyContinue
     Write-Host "[*] Progress reset. Starting from Stage 1." -ForegroundColor Yellow
 }
 
