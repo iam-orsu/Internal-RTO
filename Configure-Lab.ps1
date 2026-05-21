@@ -630,8 +630,8 @@ if ($Role -eq "DC") {
 
             Register-LabResume
             Start-Sleep -Seconds 10
-            Stop-Transcript
-            Restart-Computer -Force
+            try { Stop-Transcript } catch {}
+            try { Restart-Computer -Force } catch {}
             exit 0
         } else {
             Write-Host "`n[*] No reboot needed for Stage 1. Moving directly to Stage 2..." -ForegroundColor Yellow
@@ -668,8 +668,8 @@ if ($Role -eq "DC") {
             }
             Register-LabResume
             Start-Sleep -Seconds 3
-            Stop-Transcript
-            Restart-Computer -Force
+            try { Stop-Transcript } catch {}
+            try { Restart-Computer -Force } catch {}
             exit 0
         }
 
@@ -695,8 +695,8 @@ if ($Role -eq "DC") {
                 -Force:$true
 
             # Normally unreachable (auto-reboot)
-            Stop-Transcript
-            Restart-Computer -Force
+            try { Stop-Transcript } catch {}
+            try { Restart-Computer -Force } catch {}
         } catch {
             Write-Host ""
             Write-Host "    [!] Promotion FAILED: $($_.Exception.Message)" -ForegroundColor Red
@@ -1359,8 +1359,8 @@ if ($Role -eq "WS") {
 
             Register-LabResume
             Start-Sleep -Seconds 10
-            Stop-Transcript
-            Restart-Computer -Force
+            try { Stop-Transcript } catch {}
+            try { Restart-Computer -Force } catch {}
             exit 0
         } else {
             Write-Host "`n[*] No reboot needed for Stage 1. Moving directly to Stage 2..." -ForegroundColor Yellow
@@ -1425,8 +1425,8 @@ if ($Role -eq "WS") {
             Write-Host "    [+] Domain join successful! Rebooting..." -ForegroundColor Green
             Register-LabResume
             Start-Sleep -Seconds 5
-            Stop-Transcript
-            Restart-Computer -Force
+            try { Stop-Transcript } catch {}
+            try { Restart-Computer -Force } catch {}
         } catch {
             Write-Host "    [!] Domain join FAILED: $($_.Exception.Message)" -ForegroundColor Red
             Write-Host ""
