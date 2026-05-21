@@ -1463,6 +1463,9 @@ if ($Role -eq "WS") {
         $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
             "Everyone", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
         )
+        $everyoneFileRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "Everyone", "FullControl", "None", "None", "Allow"
+        )
 
         # ---- 1/4: Local Privilege Escalation ----
         Write-Host "`n[1/4] Configuring local privilege escalation..." -ForegroundColor Yellow
@@ -1494,7 +1497,7 @@ if ($Role -eq "WS") {
         Copy-Item "C:\Windows\System32\notepad.exe" "$weakPath\vulnservice.exe" -Force
         # ($everyoneRule already created at top of Stage 3)
         $acl = Get-Acl $weakPath; $acl.AddAccessRule($everyoneRule); Set-Acl $weakPath $acl
-        $acl = Get-Acl "$weakPath\vulnservice.exe"; $acl.AddAccessRule($everyoneRule); Set-Acl "$weakPath\vulnservice.exe" $acl
+        $acl = Get-Acl "$weakPath\vulnservice.exe"; $acl.AddAccessRule($everyoneFileRule); Set-Acl "$weakPath\vulnservice.exe" $acl
         New-LabService -Name "VulnService" -BinPath "$weakPath\vulnservice.exe" `
             -Description "Vulnerable service with weak file permissions"
 
@@ -1523,7 +1526,7 @@ if ($Role -eq "WS") {
         New-Item -Path "C:\ScheduledTasks" -ItemType Directory -Force | Out-Null
         "Write-Host 'Cleanup task running...'" | Out-File "C:\ScheduledTasks\cleanup.ps1"
         $taskFileAcl = Get-Acl "C:\ScheduledTasks\cleanup.ps1"
-        $taskFileAcl.AddAccessRule($everyoneRule)
+        $taskFileAcl.AddAccessRule($everyoneFileRule)
         Set-Acl "C:\ScheduledTasks\cleanup.ps1" $taskFileAcl
         $action = New-ScheduledTaskAction -Execute "powershell.exe" `
             -Argument "-ExecutionPolicy Bypass -File C:\ScheduledTasks\cleanup.ps1"
