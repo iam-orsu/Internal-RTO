@@ -61,10 +61,14 @@ Start-Transcript -Path $logFile -Append -Force | Out-Null
 Write-Host "[*] Logging to $logFile" -ForegroundColor Gray
 
 # Execution policy
-$currentPolicy = Get-ExecutionPolicy -Scope Process
-if ($currentPolicy -eq "Restricted") {
-    Write-Host "[!] Setting execution policy to Bypass for this session." -ForegroundColor Yellow
-    Set-ExecutionPolicy Bypass -Scope Process -Force
+try {
+    $currentPolicy = Get-ExecutionPolicy -Scope Process
+    if ($currentPolicy -eq "Restricted") {
+        Write-Host "[!] Setting execution policy to Bypass for this session." -ForegroundColor Yellow
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+    }
+} catch {
+    Write-Host "[!] Failed to check/set execution policy: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 # Admin check
@@ -111,30 +115,36 @@ function Find-LabNetwork {
             Where-Object { $_.IPAddress -notlike "169.254.*" -and $_.PrefixOrigin -eq "Dhcp" } |
             Select-Object -First 1
 
-        if ($ipConfig) {
-            $ip = $ipConfig.IPAddress
-            $octets = $ip.Split(".")
-            $subnet = "$($octets[0]).$($octets[1]).$($octets[2])"
+        if ($ipConfig -and $ipConfig.IPAddress) {
+            try {
+                $ip = $ipConfig.IPAddress
+                $octets = $ip.Split(".")
+                if ($octets.Count -ge 4) {
+                    $subnet = "$($octets[0]).$($octets[1]).$($octets[2])"
 
-            $conf = @{
-                Subnet        = $subnet
-                DCIPAddress   = "$subnet.10"
-                WSIPAddress   = "$subnet.20"
-                KaliIPAddress = "$subnet.30"
-                Gateway       = "$subnet.2"
-                SubnetPrefix  = "24"
-                AdapterIndex  = [string]$adapter.ifIndex
-                AdapterName   = $adapter.Name
-                DetectedFrom  = $ip
+                    $conf = @{
+                        Subnet        = $subnet
+                        DCIPAddress   = "$subnet.10"
+                        WSIPAddress   = "$subnet.20"
+                        KaliIPAddress = "$subnet.30"
+                        Gateway       = "$subnet.2"
+                        SubnetPrefix  = "24"
+                        AdapterIndex  = [string]$adapter.ifIndex
+                        AdapterName   = $adapter.Name
+                        DetectedFrom  = $ip
+                    }
+
+                    $conf.GetEnumerator() | Sort-Object Key | ForEach-Object {
+                        "$($_.Key)=$($_.Value)"
+                    } | Set-Content $netConf -Force -ErrorAction Stop
+
+                    Write-Host "    [+] Detected NAT subnet: $subnet.0/24 (from DHCP: $ip)" -ForegroundColor Green
+                    Write-Host "    [+] DC: $subnet.10 | WS: $subnet.20 | Gateway: $subnet.2" -ForegroundColor Green
+                    return $conf
+                }
+            } catch {
+                Write-Host "    [!] Error processing DHCP adapter $($adapter.Name): $($_.Exception.Message)" -ForegroundColor Yellow
             }
-
-            $conf.GetEnumerator() | Sort-Object Key | ForEach-Object {
-                "$($_.Key)=$($_.Value)"
-            } | Set-Content $netConf
-
-            Write-Host "    [+] Detected NAT subnet: $subnet.0/24 (from DHCP: $ip)" -ForegroundColor Green
-            Write-Host "    [+] DC: $subnet.10 | WS: $subnet.20 | Gateway: $subnet.2" -ForegroundColor Green
-            return $conf
         }
     }
 
@@ -269,16 +279,20 @@ function Register-LabResume {
     $scriptPath = "$labDir\Configure-Lab.ps1"
     if (-not (Test-Path $scriptPath)) { return }
 
-    # Save current role so it persists across reboots
-    $roleFile = "$labDir\role.txt"
-    if ($Role) { Set-Content -Path $roleFile -Value $Role -Force }
+    try {
+        # Save current role so it persists across reboots
+        $roleFile = "$labDir\role.txt"
+        if ($Role) { Set-Content -Path $roleFile -Value $Role -Force | Out-Null }
 
-    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
-    # Use Start-Process -Verb RunAs to ensure elevation on workstations
-    # Pass -Role so the menu does not show again after reboot
-    $cmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command `"Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -NoExit -File \`"$scriptPath\`" -Role $Role'`""
-    Set-ItemProperty -Path $regPath -Name "LabSetup" -Value $cmd -Force
-    Write-Host "    [+] Auto-resume registered (will continue at next login)" -ForegroundColor Green
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
+        # Use Start-Process -Verb RunAs to ensure elevation on workstations
+        # Pass -Role so the menu does not show again after reboot
+        $cmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command `"Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -NoExit -File \`"$scriptPath\`" -Role $Role'`""
+        Set-ItemProperty -Path $regPath -Name "LabSetup" -Value $cmd -Force | Out-Null
+        Write-Host "    [+] Auto-resume registered (will continue at next login)" -ForegroundColor Green
+    } catch {
+        Write-Host "    [!] Failed to register auto-resume: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 function Unregister-LabResume {
@@ -354,16 +368,21 @@ function Disable-WindowsDefender {
         Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
     } catch {}
 
-    $defenderPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
-    if (-not (Test-Path $defenderPath)) { New-Item -Path $defenderPath -Force | Out-Null }
-    Set-ItemProperty -Path $defenderPath -Name "DisableAntiSpyware" -Value 1 -Type DWord -Force
-    $rtpPath = "$defenderPath\Real-Time Protection"
-    if (-not (Test-Path $rtpPath)) { New-Item -Path $rtpPath -Force | Out-Null }
-    Set-ItemProperty -Path $rtpPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWord -Force
-    Set-ItemProperty -Path $rtpPath -Name "DisableBehaviorMonitoring" -Value 1 -Type DWord -Force
-    Set-ItemProperty -Path $rtpPath -Name "DisableIOAVProtection" -Value 1 -Type DWord -Force
-    Set-ItemProperty -Path $rtpPath -Name "DisableScanOnRealtimeEnable" -Value 1 -Type DWord -Force
-    Write-Host "    [+] Defender registry policies set" -ForegroundColor Green
+    try {
+        $defenderPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
+        if (-not (Test-Path $defenderPath)) { New-Item -Path $defenderPath -Force | Out-Null }
+        Set-ItemProperty -Path $defenderPath -Name "DisableAntiSpyware" -Value 1 -Type DWord -Force | Out-Null
+        
+        $rtpPath = "$defenderPath\Real-Time Protection"
+        if (-not (Test-Path $rtpPath)) { New-Item -Path $rtpPath -Force | Out-Null }
+        Set-ItemProperty -Path $rtpPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWord -Force | Out-Null
+        Set-ItemProperty -Path $rtpPath -Name "DisableBehaviorMonitoring" -Value 1 -Type DWord -Force | Out-Null
+        Set-ItemProperty -Path $rtpPath -Name "DisableIOAVProtection" -Value 1 -Type DWord -Force | Out-Null
+        Set-ItemProperty -Path $rtpPath -Name "DisableScanOnRealtimeEnable" -Value 1 -Type DWord -Force | Out-Null
+        Write-Host "    [+] Defender registry policies set" -ForegroundColor Green
+    } catch {
+        Write-Host "    [!] Failed to set some Defender registry policies: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 
     try {
         Add-MpPreference -ExclusionPath "C:\Tools" -ErrorAction SilentlyContinue
@@ -447,6 +466,63 @@ function Set-LabACE {
         Write-Host "    [!] ACE error ($Label): $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
+
+function Add-LabGroupMember {
+    param(
+        [string]$GroupName,
+        [string]$MemberIdentity
+    )
+    try {
+        $group = Get-ADGroup -Identity $GroupName -Properties Member -ErrorAction Stop
+        # Resolve member distinguishedName
+        $memberDN = $null
+        $memberObj = Get-ADUser -Identity $MemberIdentity -ErrorAction SilentlyContinue
+        if ($memberObj) {
+            $memberDN = $memberObj.DistinguishedName
+        } else {
+            $memberObj = Get-ADGroup -Identity $MemberIdentity -ErrorAction SilentlyContinue
+            if ($memberObj) {
+                $memberDN = $memberObj.DistinguishedName
+            } else {
+                $memberObj = Get-ADComputer -Identity $MemberIdentity -ErrorAction SilentlyContinue
+                if ($memberObj) {
+                    $memberDN = $memberObj.DistinguishedName
+                }
+            }
+        }
+        
+        if ($null -eq $memberDN) {
+            # Fallback to check by name match if DN cannot be resolved
+            $memberDN = $MemberIdentity
+        }
+
+        $exists = $false
+        if ($group.Member) {
+            foreach ($m in $group.Member) {
+                if ($m -eq $memberDN -or $m.Split(',')[0] -eq $memberDN.Split(',')[0]) {
+                    $exists = $true
+                    break
+                }
+            }
+        }
+
+        if ($exists) {
+            Write-Host "    [=] Group member exists: $MemberIdentity -> $GroupName" -ForegroundColor DarkGray
+        } else {
+            Add-ADGroupMember -Identity $GroupName -Members $MemberIdentity -ErrorAction Stop
+            Write-Host "    [+] Added member: $MemberIdentity -> $GroupName" -ForegroundColor Green
+        }
+    } catch {
+        # Fallback to direct attempt in case of error
+        try {
+            Add-ADGroupMember -Identity $GroupName -Members $MemberIdentity -ErrorAction Stop
+            Write-Host "    [+] Added member: $MemberIdentity -> $GroupName" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to add $MemberIdentity to ${GroupName}: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+}
+
 
 
 # ============================================================
@@ -587,19 +663,26 @@ if ($Role -eq "DC") {
 
         # Install AD DS
         Write-Host "`n[*] Installing Active Directory Domain Services..." -ForegroundColor Yellow
-        $addsFeature = Get-WindowsFeature AD-Domain-Services
-        if (-not $addsFeature.Installed) {
-            $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
-            if ($result.Success) {
-                Write-Host "    [+] AD DS feature installed" -ForegroundColor Green
+        try {
+            $addsFeature = Get-WindowsFeature AD-Domain-Services -ErrorAction Stop
+            if (-not $addsFeature.Installed) {
+                $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools -ErrorAction Stop
+                if ($result.Success) {
+                    Write-Host "    [+] AD DS feature installed" -ForegroundColor Green
+                } else {
+                    Write-Host "    [!] AD DS install FAILED." -ForegroundColor Red
+                    Set-Content -Path $stageFile -Value "1" -Force -ErrorAction SilentlyContinue
+                    try { Stop-Transcript } catch {}
+                    exit 1
+                }
             } else {
-                Write-Host "    [!] AD DS install FAILED." -ForegroundColor Red
-                Set-Content -Path $stageFile -Value "1"
-                try { Stop-Transcript } catch {}
-                exit 1
+                Write-Host "    [=] AD DS already installed" -ForegroundColor DarkGray
             }
-        } else {
-            Write-Host "    [=] AD DS already installed" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "    [!] AD DS feature installation error: $($_.Exception.Message)" -ForegroundColor Red
+            Set-Content -Path $stageFile -Value "1" -Force -ErrorAction SilentlyContinue
+            try { Stop-Transcript } catch {}
+            exit 1
         }
 
         # Rename
@@ -649,27 +732,38 @@ if ($Role -eq "DC") {
         Write-Host ""
 
         # Already a DC?
-        $domainRoleCheck = (Get-CimInstance Win32_ComputerSystem).DomainRole
+        $domainRoleCheck = 0
+        try {
+            $domainRoleCheck = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).DomainRole
+        } catch {
+            Write-Host "    [!] CIM DomainRole check failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
         if ($domainRoleCheck -in @(4, 5)) {
             Write-Host "    [=] Already a Domain Controller. Skipping reboot and proceeding to Stage 3." -ForegroundColor Green
-            Set-Content -Path $stageFile -Value "3"
+            try { Set-Content -Path $stageFile -Value "3" -Force -ErrorAction Stop } catch {}
             $stage = 3
         } else {
             # Verify AD DS feature
-            $addsCheck = Get-WindowsFeature AD-Domain-Services
-            if (-not $addsCheck.Installed) {
-                Write-Host "    [!] AD DS not installed. Installing..." -ForegroundColor Yellow
-                $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
-                if (-not $result.Success) {
-                    Write-Host "    [!] AD DS install failed." -ForegroundColor Red
+            try {
+                $addsCheck = Get-WindowsFeature AD-Domain-Services -ErrorAction Stop
+                if (-not $addsCheck.Installed) {
+                    Write-Host "    [!] AD DS not installed. Installing..." -ForegroundColor Yellow
+                    $result = Install-WindowsFeature AD-Domain-Services -IncludeManagementTools -ErrorAction Stop
+                    if (-not $result.Success) {
+                        Write-Host "    [!] AD DS install failed." -ForegroundColor Red
+                        try { Stop-Transcript } catch {}
+                        exit 1
+                    }
+                    Register-LabResume
+                    Start-Sleep -Seconds 3
                     try { Stop-Transcript } catch {}
-                    exit 1
+                    try { Restart-Computer -Force } catch {}
+                    exit 0
                 }
-                Register-LabResume
-                Start-Sleep -Seconds 3
+            } catch {
+                Write-Host "    [!] AD DS verification failed: $($_.Exception.Message)" -ForegroundColor Red
                 try { Stop-Transcript } catch {}
-                try { Restart-Computer -Force } catch {}
-                exit 0
+                exit 1
             }
 
             # Save stage 3 BEFORE promotion (promotion auto-reboots)
@@ -728,8 +822,17 @@ if ($Role -eq "DC") {
             exit 1
         }
 
-        Import-Module ActiveDirectory -ErrorAction Stop
-        $domain = (Get-ADDomain).DistinguishedName
+        $domain = $null
+        try {
+            Import-Module ActiveDirectory -ErrorAction Stop
+            $domain = (Get-ADDomain).DistinguishedName
+        } catch {
+            Write-Host "    [!] Failed to load ActiveDirectory module or connect to AD: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [!] Stage 3 cannot continue. Fix the AD service and run again." -ForegroundColor Yellow
+            try { Stop-Transcript } catch {}
+            exit 1
+        }
+
         $employeesOU = "OU=BankEmployees,$domain"
         $serviceOU = "OU=ServiceAccounts,$domain"
 
@@ -822,10 +925,12 @@ if ($Role -eq "DC") {
             }
         }
 
-        Add-ADGroupMember -Identity "Domain Admins" -Members "ammulu.orsu" -ErrorAction SilentlyContinue
-        Write-Host "    [+] ammulu.orsu -> Domain Admins" -ForegroundColor Green
+        Add-LabGroupMember -GroupName "Domain Admins" -MemberIdentity "ammulu.orsu"
 
-        $attackerUser = Get-ADUser -Filter "SamAccountName -eq 'vamsi.krishna'" | Select-Object -First 1
+        $attackerUser = Get-ADUser -Filter "SamAccountName -eq 'vamsi.krishna'" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $attackerUser) {
+            Write-Host "    [!] Attacker user vamsi.krishna not found. Some ACL modifications will fail." -ForegroundColor Yellow
+        }
 
         # ---- 3/10: Kerberoasting ----
         Write-Host "`n[3/10] Configuring Kerberoasting targets..." -ForegroundColor Yellow
@@ -873,146 +978,217 @@ if ($Role -eq "DC") {
             }
         }
 
-        # ---- 5/10: ACL Abuse ----
-        Write-Host "`n[5/10] Configuring ACL abuse paths..." -ForegroundColor Yellow
-
         # GenericAll: vamsi.krishna on lakshmi.devi
-        $targetUser = Get-ADUser -Filter "SamAccountName -eq 'lakshmi.devi'" | Select-Object -First 1
-        $gaRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-            $attackerUser.SID,
-            [System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
-            [System.Security.AccessControl.AccessControlType]::Allow
-        )
-        Set-LabACE -TargetDN $targetUser.DistinguishedName -Rule $gaRule `
-            -Label "GenericAll: vamsi.krishna -> lakshmi.devi"
+        $targetUser = Get-ADUser -Filter "SamAccountName -eq 'lakshmi.devi'" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($attackerUser -and $targetUser) {
+            try {
+                $gaRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                    $attackerUser.SID,
+                    [System.DirectoryServices.ActiveDirectoryRights]::GenericAll,
+                    [System.Security.AccessControl.AccessControlType]::Allow
+                )
+                Set-LabACE -TargetDN $targetUser.DistinguishedName -Rule $gaRule `
+                    -Label "GenericAll: vamsi.krishna -> lakshmi.devi"
+            } catch {
+                Write-Host "    [!] GenericAll ACE setup failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "    [!] GenericAll skipped: vamsi.krishna or lakshmi.devi not found" -ForegroundColor Yellow
+        }
 
         # IT_Admins group + WriteDACL
-        if (-not (Get-ADGroup -Filter "Name -eq 'IT_Admins'" -ErrorAction SilentlyContinue)) {
-            New-ADGroup -Name "IT_Admins" -GroupScope Global -GroupCategory Security `
-                -Path $domain -Description "IT Administrators"
+        try {
+            if (-not (Get-ADGroup -Filter "Name -eq 'IT_Admins'" -ErrorAction SilentlyContinue)) {
+                New-ADGroup -Name "IT_Admins" -GroupScope Global -GroupCategory Security `
+                    -Path $domain -Description "IT Administrators" -ErrorAction Stop
+                Write-Host "    [+] Group created: IT_Admins" -ForegroundColor Green
+            }
+            Add-LabGroupMember -GroupName "Domain Admins" -MemberIdentity "IT_Admins"
+        } catch {
+            Write-Host "    [!] IT_Admins setup error: $($_.Exception.Message)" -ForegroundColor Yellow
         }
-        Add-ADGroupMember -Identity "Domain Admins" -Members "IT_Admins" -ErrorAction SilentlyContinue
 
-        $itAdmins = Get-ADGroup -Filter "Name -eq 'IT_Admins'" | Select-Object -First 1
-        $wdRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-            $attackerUser.SID,
-            [System.DirectoryServices.ActiveDirectoryRights]::WriteDacl,
-            [System.Security.AccessControl.AccessControlType]::Allow
-        )
-        Set-LabACE -TargetDN $itAdmins.DistinguishedName -Rule $wdRule `
-            -Label "WriteDACL: vamsi.krishna -> IT_Admins (member of DA)"
+        $itAdmins = Get-ADGroup -Filter "Name -eq 'IT_Admins'" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($attackerUser -and $itAdmins) {
+            try {
+                $wdRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                    $attackerUser.SID,
+                    [System.DirectoryServices.ActiveDirectoryRights]::WriteDacl,
+                    [System.Security.AccessControl.AccessControlType]::Allow
+                )
+                Set-LabACE -TargetDN $itAdmins.DistinguishedName -Rule $wdRule `
+                    -Label "WriteDACL: vamsi.krishna -> IT_Admins (member of DA)"
+            } catch {
+                Write-Host "    [!] WriteDACL ACE setup failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "    [!] WriteDACL skipped: vamsi.krishna or IT_Admins not found" -ForegroundColor Yellow
+        }
 
         # ForceChangePassword: divya on ammulu.orsu
-        $daUser = Get-ADUser -Filter "SamAccountName -eq 'ammulu.orsu'" | Select-Object -First 1
-        $divyaUser = Get-ADUser -Filter "SamAccountName -eq 'divya'" | Select-Object -First 1
-        $fcpGuid = [GUID]"00299570-246d-11d0-a768-00aa006e0529"
-        $fcpRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-            $divyaUser.SID,
-            [System.DirectoryServices.ActiveDirectoryRights]::ExtendedRight,
-            [System.Security.AccessControl.AccessControlType]::Allow,
-            $fcpGuid
-        )
-        Set-LabACE -TargetDN $daUser.DistinguishedName -Rule $fcpRule `
-            -Label "ForceChangePassword: divya -> ammulu.orsu (DA)"
+        $daUser = Get-ADUser -Filter "SamAccountName -eq 'ammulu.orsu'" -ErrorAction SilentlyContinue | Select-Object -First 1
+        $divyaUser = Get-ADUser -Filter "SamAccountName -eq 'divya'" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($daUser -and $divyaUser) {
+            try {
+                $fcpGuid = [GUID]"00299570-246d-11d0-a768-00aa006e0529"
+                $fcpRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                    $divyaUser.SID,
+                    [System.DirectoryServices.ActiveDirectoryRights]::ExtendedRight,
+                    [System.Security.AccessControl.AccessControlType]::Allow,
+                    $fcpGuid
+                )
+                Set-LabACE -TargetDN $daUser.DistinguishedName -Rule $fcpRule `
+                    -Label "ForceChangePassword: divya -> ammulu.orsu (DA)"
+            } catch {
+                Write-Host "    [!] ForceChangePassword ACE setup failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "    [!] ForceChangePassword skipped: ammulu.orsu or divya not found" -ForegroundColor Yellow
+        }
 
         # GenericWrite: vamsi.krishna on sai.kiran
-        $saiKiran = Get-ADUser -Filter "SamAccountName -eq 'sai.kiran'" | Select-Object -First 1
-        $gwRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-            $attackerUser.SID,
-            [System.DirectoryServices.ActiveDirectoryRights]::GenericWrite,
-            [System.Security.AccessControl.AccessControlType]::Allow
-        )
-        Set-LabACE -TargetDN $saiKiran.DistinguishedName -Rule $gwRule `
-            -Label "GenericWrite: vamsi.krishna -> sai.kiran (targeted Kerberoasting)"
+        $saiKiran = Get-ADUser -Filter "SamAccountName -eq 'sai.kiran'" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($attackerUser -and $saiKiran) {
+            try {
+                $gwRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                    $attackerUser.SID,
+                    [System.DirectoryServices.ActiveDirectoryRights]::GenericWrite,
+                    [System.Security.AccessControl.AccessControlType]::Allow
+                )
+                Set-LabACE -TargetDN $saiKiran.DistinguishedName -Rule $gwRule `
+                    -Label "GenericWrite: vamsi.krishna -> sai.kiran (targeted Kerberoasting)"
+            } catch {
+                Write-Host "    [!] GenericWrite ACE setup failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "    [!] GenericWrite skipped: vamsi.krishna or sai.kiran not found" -ForegroundColor Yellow
+        }
 
         # ---- 6/10: DA Paths ----
         Write-Host "`n[6/10] Configuring Domain Admin paths..." -ForegroundColor Yellow
 
         # Nested group chain
-        $groupChain = @(
-            @{ Name="HelpDesk_Team"; Desc="First-level support" },
-            @{ Name="IT_Support"; Desc="Second-level IT support" },
-            @{ Name="Server_Admins"; Desc="Server administrators" }
-        )
-        foreach ($g in $groupChain) {
-            if (-not (Get-ADGroup -Filter "Name -eq '$($g.Name)'" -ErrorAction SilentlyContinue)) {
-                New-ADGroup -Name $g.Name -GroupScope Global -GroupCategory Security -Description $g.Desc
+        try {
+            $groupChain = @(
+                @{ Name="HelpDesk_Team"; Desc="First-level support" },
+                @{ Name="IT_Support"; Desc="Second-level IT support" },
+                @{ Name="Server_Admins"; Desc="Server administrators" }
+            )
+            foreach ($g in $groupChain) {
+                if (-not (Get-ADGroup -Filter "Name -eq '$($g.Name)'" -ErrorAction SilentlyContinue)) {
+                    New-ADGroup -Name $g.Name -GroupScope Global -GroupCategory Security -Description $g.Desc -ErrorAction Stop
+                    Write-Host "    [+] Created Group: $($g.Name)" -ForegroundColor Green
+                } else {
+                    Write-Host "    [=] Group exists: $($g.Name)" -ForegroundColor DarkGray
+                }
             }
+            Add-LabGroupMember -GroupName "IT_Support" -MemberIdentity "HelpDesk_Team"
+            Add-LabGroupMember -GroupName "Server_Admins" -MemberIdentity "IT_Support"
+            Add-LabGroupMember -GroupName "Domain Admins" -MemberIdentity "Server_Admins"
+            Add-LabGroupMember -GroupName "HelpDesk_Team" -MemberIdentity "harsha.vardhan"
+            Write-Host "    [+] Chain: harsha.vardhan -> HelpDesk -> IT_Support -> Server_Admins -> DA" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Nested group chain configuration error: $($_.Exception.Message)" -ForegroundColor Yellow
         }
-        Add-ADGroupMember -Identity "IT_Support" -Members "HelpDesk_Team" -ErrorAction SilentlyContinue
-        Add-ADGroupMember -Identity "Server_Admins" -Members "IT_Support" -ErrorAction SilentlyContinue
-        Add-ADGroupMember -Identity "Domain Admins" -Members "Server_Admins" -ErrorAction SilentlyContinue
-        Add-ADGroupMember -Identity "HelpDesk_Team" -Members "harsha.vardhan" -ErrorAction SilentlyContinue
-        Write-Host "    [+] Chain: harsha.vardhan -> HelpDesk -> IT_Support -> Server_Admins -> DA" -ForegroundColor Green
 
         # svc_backup: DA with SPN
-        $svcBackupPass = ConvertTo-SecureString "Backup@2024!" -AsPlainText -Force
-        if (-not (Get-ADUser -Filter "SamAccountName -eq 'svc_backup'" -ErrorAction SilentlyContinue)) {
-            New-ADUser -Name "svc_backup" -SamAccountName "svc_backup" `
-                -UserPrincipalName "svc_backup@$DomainFQDN" -Path $serviceOU `
-                -AccountPassword $svcBackupPass -Enabled $true `
-                -PasswordNeverExpires $true -Description "Backup Service Account"
+        try {
+            $svcBackupPass = ConvertTo-SecureString "Backup@2024!" -AsPlainText -Force
+            if (-not (Get-ADUser -Filter "SamAccountName -eq 'svc_backup'" -ErrorAction SilentlyContinue)) {
+                New-ADUser -Name "svc_backup" -SamAccountName "svc_backup" `
+                    -UserPrincipalName "svc_backup@$DomainFQDN" -Path $serviceOU `
+                    -AccountPassword $svcBackupPass -Enabled $true `
+                    -PasswordNeverExpires $true -Description "Backup Service Account" -ErrorAction Stop
+                Write-Host "    [+] Created user: svc_backup" -ForegroundColor Green
+            } else {
+                Write-Host "    [=] User exists: svc_backup" -ForegroundColor DarkGray
+            }
+            Add-LabGroupMember -GroupName "Domain Admins" -MemberIdentity "svc_backup"
+            Set-ADUser -Identity "svc_backup" -ServicePrincipalNames @{Add="backup/dc01.orsubank.local"} -ErrorAction Stop
+            Write-Host "    [+] svc_backup: DA with SPN (backup/dc01.orsubank.local)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure svc_backup: $($_.Exception.Message)" -ForegroundColor Yellow
         }
-        Add-ADGroupMember -Identity "Domain Admins" -Members "svc_backup" -ErrorAction SilentlyContinue
-        Set-ADUser -Identity "svc_backup" -ServicePrincipalNames @{Add="backup/dc01.orsubank.local"} -ErrorAction SilentlyContinue
-        Write-Host "    [+] svc_backup: DA with SPN (Kerberoastable DA)" -ForegroundColor Green
 
         # DCSync rights for WS01$
-        $ws01 = Get-ADComputer -Filter "Name -eq 'WS01'" -ErrorAction SilentlyContinue
-        $skippedWS01Items = @()
-        if ($ws01) {
-            $domainDN = (Get-ADDomain).DistinguishedName
-            $ace1 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-                $ws01.SID, "ExtendedRight", "Allow",
-                [GUID]"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2"
-            )
-            $ace2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-                $ws01.SID, "ExtendedRight", "Allow",
-                [GUID]"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"
-            )
-            Set-LabACE -TargetDN $domainDN -Rule $ace1 -Label "DCSync (Get-Changes) for WS01$"
-            Set-LabACE -TargetDN $domainDN -Rule $ace2 -Label "DCSync (Get-Changes-All) for WS01$"
-        } else {
-            $skippedWS01Items += "DCSync rights"
-            Write-Host "    [!] WS01 not joined yet. DCSync rights skipped." -ForegroundColor Yellow
+        try {
+            $ws01 = Get-ADComputer -Filter "Name -eq 'WS01'" -ErrorAction SilentlyContinue
+            $skippedWS01Items = @()
+            if ($ws01) {
+                $domainDN = (Get-ADDomain).DistinguishedName
+                $ace1 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                    $ws01.SID, "ExtendedRight", "Allow",
+                    [GUID]"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2"
+                )
+                $ace2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                    $ws01.SID, "ExtendedRight", "Allow",
+                    [GUID]"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"
+                )
+                Set-LabACE -TargetDN $domainDN -Rule $ace1 -Label "DCSync (Get-Changes) for WS01$"
+                Set-LabACE -TargetDN $domainDN -Rule $ace2 -Label "DCSync (Get-Changes-All) for WS01$"
+            } else {
+                $skippedWS01Items += "DCSync rights"
+                Write-Host "    [!] WS01 not joined yet. DCSync rights skipped." -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "    [!] Failed to configure DCSync rights: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # ---- 7/10: Delegation ----
         Write-Host "`n[7/10] Configuring delegation..." -ForegroundColor Yellow
 
-        if ($ws01) {
-            Set-ADComputer -Identity "WS01" -TrustedForDelegation $true
-            Write-Host "    [+] Unconstrained Delegation on WS01" -ForegroundColor Green
-        } else {
-            $skippedWS01Items += "Unconstrained Delegation"
-            Write-Host "    [!] WS01 not found. Unconstrained Delegation skipped." -ForegroundColor Yellow
+        try {
+            if ($ws01) {
+                Set-ADComputer -Identity "WS01" -TrustedForDelegation $true -ErrorAction Stop
+                Write-Host "    [+] Unconstrained Delegation on WS01" -ForegroundColor Green
+            } else {
+                $skippedWS01Items += "Unconstrained Delegation"
+                Write-Host "    [!] WS01 not found. Unconstrained Delegation skipped." -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "    [!] Failed to set Unconstrained Delegation on WS01: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # Constrained: svc_web -> CIFS/DC01
-        $svcWebPass = ConvertTo-SecureString "WebSvc@2024!" -AsPlainText -Force
-        if (-not (Get-ADUser -Filter "SamAccountName -eq 'svc_web'" -ErrorAction SilentlyContinue)) {
-            New-ADUser -Name "svc_web" -SamAccountName "svc_web" `
-                -UserPrincipalName "svc_web@$DomainFQDN" -Path $serviceOU `
-                -AccountPassword $svcWebPass -Enabled $true `
-                -PasswordNeverExpires $true -Description "Web Application Service"
+        try {
+            $svcWebPass = ConvertTo-SecureString "WebSvc@2024!" -AsPlainText -Force
+            if (-not (Get-ADUser -Filter "SamAccountName -eq 'svc_web'" -ErrorAction SilentlyContinue)) {
+                New-ADUser -Name "svc_web" -SamAccountName "svc_web" `
+                    -UserPrincipalName "svc_web@$DomainFQDN" -Path $serviceOU `
+                    -AccountPassword $svcWebPass -Enabled $true `
+                    -PasswordNeverExpires $true -Description "Web Application Service" -ErrorAction Stop
+                    Write-Host "    [+] Created user: svc_web" -ForegroundColor Green
+            } else {
+                Write-Host "    [=] User exists: svc_web" -ForegroundColor DarkGray
+            }
+            Set-ADUser -Identity "svc_web" -ServicePrincipalNames @{Add="HTTP/intranet.orsubank.local"} -ErrorAction Stop
+            Set-ADUser -Identity "svc_web" -Replace @{
+                "msDS-AllowedToDelegateTo" = @("CIFS/DC01.orsubank.local", "CIFS/DC01")
+            } -ErrorAction Stop
+            Set-ADAccountControl -Identity "svc_web" -TrustedToAuthForDelegation $true -ErrorAction Stop
+            Write-Host "    [+] Constrained Delegation: svc_web -> CIFS/DC01" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure Constrained Delegation: $($_.Exception.Message)" -ForegroundColor Yellow
         }
-        Set-ADUser -Identity "svc_web" -ServicePrincipalNames @{Add="HTTP/intranet.orsubank.local"} -ErrorAction SilentlyContinue
-        Set-ADUser -Identity "svc_web" -Replace @{
-            "msDS-AllowedToDelegateTo" = @("CIFS/DC01.orsubank.local", "CIFS/DC01")
-        } -ErrorAction SilentlyContinue
-        Set-ADAccountControl -Identity "svc_web" -TrustedToAuthForDelegation $true
-        Write-Host "    [+] Constrained Delegation: svc_web -> CIFS/DC01" -ForegroundColor Green
 
         # RBCD: vamsi.krishna can write delegation on WS01
-        if ($ws01) {
-            $rbcdGuid = [GUID]"3f78c3e5-f79a-46bd-a0b8-9d18116ddc79"
-            $rbcdRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-                $attackerUser.SID, "WriteProperty", "Allow", $rbcdGuid
-            )
-            Set-LabACE -TargetDN $ws01.DistinguishedName -Rule $rbcdRule `
-                -Label "RBCD write: vamsi.krishna -> WS01"
-        } else {
-            $skippedWS01Items += "RBCD"
+        try {
+            if ($ws01) {
+                if ($attackerUser) {
+                    $rbcdGuid = [GUID]"3f78c3e5-f79a-46bd-a0b8-9d18116ddc79"
+                    $rbcdRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                        $attackerUser.SID, "WriteProperty", "Allow", $rbcdGuid
+                    )
+                    Set-LabACE -TargetDN $ws01.DistinguishedName -Rule $rbcdRule `
+                        -Label "RBCD write: vamsi.krishna -> WS01"
+                } else {
+                    Write-Host "    [!] RBCD skipped: vamsi.krishna user not found" -ForegroundColor Yellow
+                }
+            } else {
+                $skippedWS01Items += "RBCD"
+            }
+        } catch {
+            Write-Host "    [!] Failed to configure RBCD: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # ---- 8/10: ADCS ----
@@ -1025,39 +1201,43 @@ if ($Role -eq "DC") {
         try { $configNC = (Get-ADRootDSE).configurationNamingContext } catch {}
         try { $domainUsersSID = (Get-ADGroup -Filter "Name -eq 'Domain Users'" | Select-Object -First 1).SID } catch {}
 
-        $adcsInstalled = (Get-WindowsFeature ADCS-Cert-Authority).Installed
-        if (-not $adcsInstalled) {
-            Write-Host "    [*] Installing ADCS (takes a few minutes)..." -ForegroundColor Gray
-            $result = Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment, Web-Windows-Auth -IncludeManagementTools
-            if ($result.Success) {
-                Write-Host "    [+] ADCS features installed" -ForegroundColor Green
+        try {
+            $adcsInstalled = (Get-WindowsFeature ADCS-Cert-Authority).Installed
+            if (-not $adcsInstalled) {
+                Write-Host "    [*] Installing ADCS (takes a few minutes)..." -ForegroundColor Gray
+                $result = Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment, Web-Windows-Auth -IncludeManagementTools
+                if ($result.Success) {
+                    Write-Host "    [+] ADCS features installed" -ForegroundColor Green
+                } else {
+                    Write-Host "    [!] ADCS install failed." -ForegroundColor Red
+                }
+
+                Start-Service W3SVC -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 5
+
+                try {
+                    Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
+                        -CACommonName "ORSUBANK-CA" -KeyLength 2048 `
+                        -HashAlgorithmName SHA256 -ValidityPeriod Years `
+                        -ValidityPeriodUnits 10 -Force | Out-Null
+                    Write-Host "    [+] Enterprise Root CA: ORSUBANK-CA" -ForegroundColor Green
+                } catch {
+                    Write-Host "    [!] CA config: $($_.Exception.Message)" -ForegroundColor Yellow
+                }
+
+                Start-Sleep -Seconds 3
+
+                try {
+                    Install-AdcsWebEnrollment -Force | Out-Null
+                    Write-Host "    [+] Web Enrollment configured" -ForegroundColor Green
+                } catch {
+                    Write-Host "    [!] Web Enrollment: $($_.Exception.Message)" -ForegroundColor Yellow
+                }
             } else {
-                Write-Host "    [!] ADCS install failed." -ForegroundColor Red
+                Write-Host "    [=] ADCS already installed" -ForegroundColor DarkGray
             }
-
-            Start-Service W3SVC -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 5
-
-            try {
-                Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
-                    -CACommonName "ORSUBANK-CA" -KeyLength 2048 `
-                    -HashAlgorithmName SHA256 -ValidityPeriod Years `
-                    -ValidityPeriodUnits 10 -Force | Out-Null
-                Write-Host "    [+] Enterprise Root CA: ORSUBANK-CA" -ForegroundColor Green
-            } catch {
-                Write-Host "    [!] CA config: $($_.Exception.Message)" -ForegroundColor Yellow
-            }
-
-            Start-Sleep -Seconds 3
-
-            try {
-                Install-AdcsWebEnrollment -Force | Out-Null
-                Write-Host "    [+] Web Enrollment configured" -ForegroundColor Green
-            } catch {
-                Write-Host "    [!] Web Enrollment: $($_.Exception.Message)" -ForegroundColor Yellow
-            }
-        } else {
-            Write-Host "    [=] ADCS already installed" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "    [!] ADCS configuration error: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # ESC1: User template allows SAN
@@ -1096,12 +1276,16 @@ if ($Role -eq "DC") {
                 if (-not (Get-ADObject -Identity $webTemplateDN -ErrorAction SilentlyContinue)) {
                     Write-Host "    [!] ESC4: WebServer template not found." -ForegroundColor Yellow
                 } else {
-                    $writeRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-                        $attackerUser.SID,
-                        [System.DirectoryServices.ActiveDirectoryRights]::GenericWrite,
-                        [System.Security.AccessControl.AccessControlType]::Allow
-                    )
-                    Set-LabACE -TargetDN $webTemplateDN -Rule $writeRule -Label "ESC4: vamsi.krishna -> GenericWrite on WebServer template"
+                    if ($attackerUser) {
+                        $writeRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                            $attackerUser.SID,
+                            [System.DirectoryServices.ActiveDirectoryRights]::GenericWrite,
+                            [System.Security.AccessControl.AccessControlType]::Allow
+                        )
+                        Set-LabACE -TargetDN $webTemplateDN -Rule $writeRule -Label "ESC4: vamsi.krishna -> GenericWrite on WebServer template"
+                    } else {
+                        Write-Host "    [!] ESC4 skipped: vamsi.krishna user not found" -ForegroundColor Yellow
+                    }
 
                     if ($domainUsersSID) {
                         $enrollRule2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
@@ -1125,7 +1309,7 @@ if ($Role -eq "DC") {
         # ESC8: Web Enrollment without SSL or EPA
         Write-Host "    [*] Configuring ESC8..." -ForegroundColor Gray
         $esc8Configured = $false
-        for ($i = 1; $i -le 5; $i++) {
+        for ($i = 1; $i -le 3; $i++) {
             try {
                 Import-Module WebAdministration -ErrorAction Stop
                 # Check if the path exists in IIS configuration before attempting to set properties
@@ -1158,32 +1342,47 @@ if ($Role -eq "DC") {
             }
         }
         if (-not $esc8Configured) {
-            Write-Host "    [!] ESC8 configuration failed after 5 attempts." -ForegroundColor Yellow
+            Write-Host "    [!] ESC8 configuration failed after 3 attempts." -ForegroundColor Yellow
         }
 
         # ---- 9/10: Credential Exposure ----
         Write-Host "`n[9/10] Configuring credential exposure..." -ForegroundColor Yellow
 
-        $wdigestPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
-        if (-not (Test-Path $wdigestPath)) { New-Item -Path $wdigestPath -Force | Out-Null }
-        Set-ItemProperty -Path $wdigestPath -Name "UseLogonCredential" -Value 1 -Type DWord -Force
-        Write-Host "    [+] WDigest enabled (cleartext in LSASS after next login)" -ForegroundColor Green
-
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "RunAsPPL" -Value 0 -Type DWord -Force
-        Write-Host "    [+] LSA Protection disabled" -ForegroundColor Green
-
-        $dgPath = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard"
-        if (-not (Test-Path $dgPath)) { New-Item -Path $dgPath -Force | Out-Null }
-        Set-ItemProperty -Path $dgPath -Name "EnableVirtualizationBasedSecurity" -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LsaCfgFlags" -Value 0 -Type DWord -Force
-        Write-Host "    [+] Credential Guard disabled" -ForegroundColor Green
-
-        # Plant credential files
-        @("C:\IT", "C:\Backup", "C:\Scripts") | ForEach-Object {
-            New-Item -Path $_ -ItemType Directory -Force | Out-Null
+        try {
+            $wdigestPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
+            if (-not (Test-Path $wdigestPath)) { New-Item -Path $wdigestPath -Force | Out-Null }
+            Set-ItemProperty -Path $wdigestPath -Name "UseLogonCredential" -Value 1 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] WDigest enabled (cleartext in LSASS after next login)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to enable WDigest: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
-        @"
+        try {
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "RunAsPPL" -Value 0 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] LSA Protection disabled" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to disable LSA Protection: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
+        try {
+            $dgPath = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard"
+            if (-not (Test-Path $dgPath)) { New-Item -Path $dgPath -Force | Out-Null }
+            Set-ItemProperty -Path $dgPath -Name "EnableVirtualizationBasedSecurity" -Value 0 -Type DWord -Force -ErrorAction Stop
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LsaCfgFlags" -Value 0 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] Credential Guard disabled" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to disable Credential Guard: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
+        # Plant credential files
+        try {
+            @("C:\IT", "C:\Backup", "C:\Scripts") | ForEach-Object {
+                if (-not (Test-Path $_)) {
+                    New-Item -Path $_ -ItemType Directory -Force | Out-Null
+                }
+            }
+
+            @"
 ORSUBANK IT ADMIN PASSWORDS (CONFIDENTIAL)
 -------------------------------------------
 
@@ -1205,9 +1404,9 @@ Remote Support Tool:
 
 DO NOT SHARE - FOR IT USE ONLY
 Last Updated: 2024-12-01
-"@ | Set-Content "C:\IT\passwords.txt"
+"@ | Set-Content "C:\IT\passwords.txt" -ErrorAction Stop
 
-        @"
+            @"
 ORSUBANK DATABASE CONNECTIONS
 ------------------------------
 
@@ -1223,9 +1422,9 @@ Backup SQL:
 
 Connection String:
 Server=DC01.orsubank.local;Database=BankingApp;User Id=sqlservice;Password=MYpassword123#;
-"@ | Set-Content "C:\Backup\database_credentials.txt"
+"@ | Set-Content "C:\Backup\database_credentials.txt" -ErrorAction Stop
 
-        @"
+            @"
 ORSUBANK SERVICE ACCOUNTS
 --------------------------
 
@@ -1237,44 +1436,77 @@ svc_backup     Backup@2024!       Backup (DA)
 svc_web        WebSvc@2024!       Web App
 
 KEEP SECURE - AUDIT ANNUALLY
-"@ | Set-Content "C:\Scripts\service_accounts.txt"
-        Write-Host "    [+] Credential files planted" -ForegroundColor Green
+"@ | Set-Content "C:\Scripts\service_accounts.txt" -ErrorAction Stop
+            Write-Host "    [+] Credential files planted" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to plant credential files: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # ---- 10/10: Coercion ----
         Write-Host "`n[10/10] Configuring coercion..." -ForegroundColor Yellow
-        Set-Service -Name Spooler -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service -Name Spooler -ErrorAction SilentlyContinue
-        $spoolerStatus = (Get-Service -Name Spooler -ErrorAction SilentlyContinue).Status
-        if ($spoolerStatus -eq "Running") {
-            Write-Host "    [+] Print Spooler running" -ForegroundColor Green
-        } else {
-            Write-Host "    [!] Print Spooler not running ($spoolerStatus)" -ForegroundColor Yellow
+        try {
+            Set-Service -Name Spooler -StartupType Automatic -ErrorAction Stop
+            Start-Service -Name Spooler -ErrorAction Stop
+            $spoolerStatus = (Get-Service -Name Spooler -ErrorAction Stop).Status
+            if ($spoolerStatus -eq "Running") {
+                Write-Host "    [+] Print Spooler running" -ForegroundColor Green
+            } else {
+                Write-Host "    [!] Print Spooler not running ($spoolerStatus)" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "    [!] Failed to configure Print Spooler: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # ---- VERIFICATION ----
         Write-Host "`n[*] Running verification checks..." -ForegroundColor Cyan
         $passed = 0; $failed = 0
 
-        $userCount = (Get-ADUser -Filter * -SearchBase $employeesOU -ErrorAction SilentlyContinue | Measure-Object).Count
-        if ($userCount -ge 10) { Write-Host "    [OK] $userCount domain users" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] Only $userCount users (expected 10)" -ForegroundColor Red; $failed++ }
+        try {
+            $userCount = 0
+            $users = Get-ADUser -Filter * -SearchBase $employeesOU -ErrorAction Stop
+            if ($users) { $userCount = ($users | Measure-Object).Count }
+            if ($userCount -ge 10) { Write-Host "    [OK] $userCount domain users" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] Only $userCount users (expected 10)" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] Could not verify domain users count: $($_.Exception.Message)" -ForegroundColor Red; $failed++
+        }
 
-        $spnCount = (Get-ADUser -Filter {ServicePrincipalName -like "*"} -Properties ServicePrincipalName -ErrorAction SilentlyContinue | Measure-Object).Count
-        if ($spnCount -ge 5) { Write-Host "    [OK] $spnCount SPN accounts" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] Only $spnCount SPN accounts (expected 5+)" -ForegroundColor Red; $failed++ }
+        try {
+            $spnCount = 0
+            $spnUsers = Get-ADUser -Filter {ServicePrincipalName -like "*"} -Properties ServicePrincipalName -ErrorAction Stop
+            if ($spnUsers) { $spnCount = ($spnUsers | Measure-Object).Count }
+            if ($spnCount -ge 5) { Write-Host "    [OK] $spnCount SPN accounts" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] Only $spnCount SPN accounts (expected 5+)" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] Could not verify SPN accounts count: $($_.Exception.Message)" -ForegroundColor Red; $failed++
+        }
 
-        $asrepCount = (Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true} -ErrorAction SilentlyContinue | Measure-Object).Count
-        if ($asrepCount -ge 3) { Write-Host "    [OK] $asrepCount AS-REP roastable" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] Only $asrepCount AS-REP accounts (expected 3)" -ForegroundColor Red; $failed++ }
+        try {
+            $asrepCount = 0
+            $asrepUsers = Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true} -ErrorAction Stop
+            if ($asrepUsers) { $asrepCount = ($asrepUsers | Measure-Object).Count }
+            if ($asrepCount -ge 3) { Write-Host "    [OK] $asrepCount AS-REP roastable" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] Only $asrepCount AS-REP accounts (expected 3)" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] Could not verify AS-REP accounts count: $($_.Exception.Message)" -ForegroundColor Red; $failed++
+        }
 
-        $caService = Get-Service -Name CertSvc -ErrorAction SilentlyContinue
-        if ($caService -and $caService.Status -eq "Running") { Write-Host "    [OK] Certificate Authority running" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] CA not running" -ForegroundColor Red; $failed++ }
+        try {
+            $caService = Get-Service -Name CertSvc -ErrorAction Stop
+            if ($caService -and $caService.Status -eq "Running") { Write-Host "    [OK] Certificate Authority running" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] CA not running" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] CA service check failed: $($_.Exception.Message)" -ForegroundColor Red; $failed++
+        }
 
         # Test internet (DNS forwarder)
-        $internetOK = Test-Connection 8.8.8.8 -Count 1 -Quiet -ErrorAction SilentlyContinue
-        if ($internetOK) { Write-Host "    [OK] Internet access works" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [WARN] No internet (check gateway $Gateway)" -ForegroundColor Yellow }
+        try {
+            $internetOK = Test-Connection 8.8.8.8 -Count 1 -Quiet -ErrorAction SilentlyContinue
+            if ($internetOK) { Write-Host "    [OK] Internet access works" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [WARN] No internet (check gateway $Gateway)" -ForegroundColor Yellow }
+        } catch {
+            Write-Host "    [WARN] Internet connection check failed" -ForegroundColor Yellow
+        }
 
         Write-Host ""
         Write-Host "    Verification: $passed passed, $failed failed" -ForegroundColor $(if ($failed -eq 0) {"Green"} else {"Yellow"})
@@ -1323,13 +1555,25 @@ if ($Role -eq "WS") {
         Write-Host "[WS Stage 1/3] Base system setup..." -ForegroundColor Yellow
         Write-Host ""
 
-        Disable-WindowsDefender
+        try {
+            Disable-WindowsDefender
+        } catch {
+            Write-Host "    [!] Failed to disable Windows Defender: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # Save stage BEFORE IP change
-        Set-Content -Path $stageFile -Value "2"
+        try {
+            Set-Content -Path $stageFile -Value "2" -ErrorAction Stop
+        } catch {
+            Write-Host "    [!] Failed to save stage file: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
-        Set-LabStaticIP -IPAddress $WSIPAddress -Prefix $SubnetPrefix `
-            -GatewayAddr $Gateway -DNSServers @($DCIPAddress)
+        try {
+            Set-LabStaticIP -IPAddress $WSIPAddress -Prefix $SubnetPrefix `
+                -GatewayAddr $Gateway -DNSServers @($DCIPAddress)
+        } catch {
+            Write-Host "    [!] Failed to set static IP: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # Rename
         $renamed = $false
@@ -1357,7 +1601,7 @@ if ($Role -eq "WS") {
             Write-Host "  Make sure DC01 is running and fully set up first." -ForegroundColor Yellow
             Write-Host ""
 
-            Register-LabResume
+            try { Register-LabResume } catch {}
             Start-Sleep -Seconds 10
             try { Stop-Transcript } catch {}
             try { Restart-Computer -Force } catch {}
@@ -1376,15 +1620,30 @@ if ($Role -eq "WS") {
         Write-Host ""
 
         # Already joined?
-        $cs = Get-CimInstance Win32_ComputerSystem
-        if ($cs.PartOfDomain -and $cs.Domain -eq $DomainFQDN) {
+        $isJoined = $false
+        try {
+            $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+            if ($cs -and $cs.PartOfDomain -and $cs.Domain -eq $DomainFQDN) {
+                $isJoined = $true
+            }
+        } catch {
+            Write-Host "    [!] Error checking domain join status: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
+        if ($isJoined) {
             Write-Host "    [=] Already joined to $DomainFQDN. Skipping reboot and proceeding to Stage 3." -ForegroundColor Green
-            Set-Content -Path $stageFile -Value "3"
+            try { Set-Content -Path $stageFile -Value "3" -ErrorAction Stop } catch {}
             $stage = 3
         } else {
             # Test DC
             Write-Host "    [*] Testing connection to DC01 ($DCIPAddress)..." -ForegroundColor Gray
-            if (-not (Test-Connection $DCIPAddress -Count 2 -Quiet)) {
+            $dcReachable = $false
+            try {
+                if (Test-Connection $DCIPAddress -Count 2 -Quiet) {
+                    $dcReachable = $true
+                }
+            } catch {}
+            if (-not $dcReachable) {
                 Write-Host "    [!] Cannot reach DC01 at $DCIPAddress" -ForegroundColor Red
                 Write-Host "    [!] Check:" -ForegroundColor Yellow
                 Write-Host "        - Is DC01 powered on?" -ForegroundColor White
@@ -1422,7 +1681,7 @@ if ($Role -eq "WS") {
 
                 Set-Content -Path $stageFile -Value "3"
                 Write-Host "    [+] Domain join successful! Rebooting..." -ForegroundColor Green
-                Register-LabResume
+                try { Register-LabResume } catch {}
                 Start-Sleep -Seconds 5
                 try { Stop-Transcript } catch {}
                 try { Restart-Computer -Force } catch {}
@@ -1447,7 +1706,9 @@ if ($Role -eq "WS") {
         Write-Host "[WS Stage 3/3] Configuring attack paths..." -ForegroundColor Yellow
         Write-Host ""
 
-        Unregister-LabResume
+        try {
+            Unregister-LabResume
+        } catch {}
 
         # Network profile to Private
         Write-Host "[*] Setting network profile..." -ForegroundColor Yellow
@@ -1459,82 +1720,145 @@ if ($Role -eq "WS") {
             Write-Host "    [=] Network profile already correct" -ForegroundColor DarkGray
         }
 
-        # Pre-create shared ACL rule (used across multiple sections)
-        $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            "Everyone", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
-        )
-        $everyoneFileRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            "Everyone", "FullControl", "None", "None", "Allow"
-        )
+        # Pre-create shared ACL rules using language-independent SID S-1-1-0 for "Everyone"
+        try {
+            $everyoneSID = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")
+            $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $everyoneSID, "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
+            )
+            $everyoneFileRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $everyoneSID, "FullControl", "None", "None", "Allow"
+            )
+            $everyoneRegRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                $everyoneSID, "FullControl", "Allow"
+            )
+        } catch {
+            Write-Host "    [!] Failed to build Everyone rules: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # ---- 1/4: Local Privilege Escalation ----
         Write-Host "`n[1/4] Configuring local privilege escalation..." -ForegroundColor Yellow
 
         # Unquoted Service Path
-        $vulnPath = "C:\Program Files\ORSU Bank\Update Service"
-        New-Item -Path $vulnPath -ItemType Directory -Force | Out-Null
-        Copy-Item "C:\Windows\System32\notepad.exe" "$vulnPath\UpdateSvc.exe" -Force
-        New-LabService -Name "ORSUUpdateService" `
-            -BinPath "C:\Program Files\ORSU Bank\Update Service\UpdateSvc.exe" `
-            -Description "ORSUBANK Automatic Update Service"
+        try {
+            $vulnPath = "C:\Program Files\ORSU Bank\Update Service"
+            if (-not (Test-Path $vulnPath)) {
+                New-Item -Path $vulnPath -ItemType Directory -Force | Out-Null
+            }
+            Copy-Item "C:\Windows\System32\notepad.exe" "$vulnPath\UpdateSvc.exe" -Force -ErrorAction Stop
+            New-LabService -Name "ORSUUpdateService" `
+                -BinPath "C:\Program Files\ORSU Bank\Update Service\UpdateSvc.exe" `
+                -Description "ORSUBANK Automatic Update Service"
+            Write-Host "    [+] Service created: ORSUUpdateService" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure ORSUUpdateService: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # AlwaysInstallElevated
-        if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer")) {
-            New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+        try {
+            if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer")) {
+                New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+            }
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" `
+                -Name "AlwaysInstallElevated" -Value 1 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] AlwaysInstallElevated set in HKLM" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure AlwaysInstallElevated HKLM: $($_.Exception.Message)" -ForegroundColor Yellow
         }
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" `
-            -Name "AlwaysInstallElevated" -Value 1 -Type DWord
-        if (-not (Test-Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer")) {
-            New-Item -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+
+        try {
+            if (-not (Test-Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer")) {
+                New-Item -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Force | Out-Null
+            }
+            Set-ItemProperty -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" `
+                -Name "AlwaysInstallElevated" -Value 1 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] AlwaysInstallElevated set in HKCU" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure AlwaysInstallElevated HKCU: $($_.Exception.Message)" -ForegroundColor Yellow
         }
-        Set-ItemProperty -Path "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer" `
-            -Name "AlwaysInstallElevated" -Value 1 -Type DWord
-        Write-Host "    [+] AlwaysInstallElevated (MSI runs as SYSTEM)" -ForegroundColor Green
 
         # Weak Service Binary
-        $weakPath = "C:\Services\VulnService"
-        New-Item -Path $weakPath -ItemType Directory -Force | Out-Null
-        Copy-Item "C:\Windows\System32\notepad.exe" "$weakPath\vulnservice.exe" -Force
-        # ($everyoneRule already created at top of Stage 3)
-        $acl = Get-Acl $weakPath; $acl.AddAccessRule($everyoneRule); Set-Acl $weakPath $acl
-        $acl = Get-Acl "$weakPath\vulnservice.exe"; $acl.AddAccessRule($everyoneFileRule); Set-Acl "$weakPath\vulnservice.exe" $acl
-        New-LabService -Name "VulnService" -BinPath "$weakPath\vulnservice.exe" `
-            -Description "Vulnerable service with weak file permissions"
+        try {
+            $weakPath = "C:\Services\VulnService"
+            if (-not (Test-Path $weakPath)) {
+                New-Item -Path $weakPath -ItemType Directory -Force | Out-Null
+            }
+            Copy-Item "C:\Windows\System32\notepad.exe" "$weakPath\vulnservice.exe" -Force -ErrorAction Stop
+            
+            if ($everyoneRule -and $everyoneFileRule) {
+                $acl = Get-Acl $weakPath
+                $acl.AddAccessRule($everyoneRule)
+                Set-Acl $weakPath $acl
+                
+                $aclFile = Get-Acl "$weakPath\vulnservice.exe"
+                $aclFile.AddAccessRule($everyoneFileRule)
+                Set-Acl "$weakPath\vulnservice.exe" $aclFile
+            }
+            New-LabService -Name "VulnService" -BinPath "$weakPath\vulnservice.exe" `
+                -Description "Vulnerable service with weak file permissions"
+            Write-Host "    [+] Weak service binary set up (VulnService)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure VulnService: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # Weak Registry Permissions
-        Copy-Item "C:\Windows\System32\notepad.exe" "C:\Windows\Temp\regsvc.exe" -Force
-        New-LabService -Name "RegHijackService" -BinPath "C:\Windows\Temp\regsvc.exe" `
-            -Description "Service with weak registry permissions"
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\RegHijackService"
-        if (Test-Path $regPath) {
-            $regAcl = Get-Acl $regPath
-            $regRule = New-Object System.Security.AccessControl.RegistryAccessRule("Everyone", "FullControl", "Allow")
-            $regAcl.AddAccessRule($regRule)
-            Set-Acl $regPath $regAcl
-            Write-Host "    [+] Weak registry ACL on RegHijackService" -ForegroundColor Green
+        try {
+            Copy-Item "C:\Windows\System32\notepad.exe" "C:\Windows\Temp\regsvc.exe" -Force -ErrorAction Stop
+            New-LabService -Name "RegHijackService" -BinPath "C:\Windows\Temp\regsvc.exe" `
+                -Description "Service with weak registry permissions"
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\RegHijackService"
+            if (Test-Path $regPath) {
+                if ($everyoneRegRule) {
+                    $regAcl = Get-Acl $regPath
+                    $regAcl.AddAccessRule($everyoneRegRule)
+                    Set-Acl $regPath $regAcl
+                    Write-Host "    [+] Weak registry ACL on RegHijackService" -ForegroundColor Green
+                }
+            } else {
+                Write-Host "    [!] RegHijackService registry path not found." -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "    [!] Failed to configure RegHijackService: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # Stored AutoLogon
-        $winlogonPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-        Set-ItemProperty -Path $winlogonPath -Name "DefaultUserName" -Value "svc_autologon"
-        Set-ItemProperty -Path $winlogonPath -Name "DefaultPassword" -Value "AutoLogon@2024!"
-        Set-ItemProperty -Path $winlogonPath -Name "DefaultDomainName" -Value $DomainNetBIOS
-        Set-ItemProperty -Path $winlogonPath -Name "AutoAdminLogon" -Value "0"
-        Write-Host "    [+] Stored AutoLogon creds: svc_autologon / AutoLogon@2024!" -ForegroundColor Green
+        try {
+            $winlogonPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+            if (-not (Test-Path $winlogonPath)) {
+                New-Item -Path $winlogonPath -Force | Out-Null
+            }
+            Set-ItemProperty -Path $winlogonPath -Name "DefaultUserName" -Value "svc_autologon" -Force -ErrorAction Stop
+            Set-ItemProperty -Path $winlogonPath -Name "DefaultPassword" -Value "AutoLogon@2024!" -Force -ErrorAction Stop
+            Set-ItemProperty -Path $winlogonPath -Name "DefaultDomainName" -Value $DomainNetBIOS -Force -ErrorAction Stop
+            Set-ItemProperty -Path $winlogonPath -Name "AutoAdminLogon" -Value "0" -Force -ErrorAction Stop
+            Write-Host "    [+] Stored AutoLogon creds: svc_autologon / AutoLogon@2024!" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure AutoLogon: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # Vulnerable Scheduled Task
-        New-Item -Path "C:\ScheduledTasks" -ItemType Directory -Force | Out-Null
-        "Write-Host 'Cleanup task running...'" | Out-File "C:\ScheduledTasks\cleanup.ps1"
-        $taskFileAcl = Get-Acl "C:\ScheduledTasks\cleanup.ps1"
-        $taskFileAcl.AddAccessRule($everyoneFileRule)
-        Set-Acl "C:\ScheduledTasks\cleanup.ps1" $taskFileAcl
-        $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-            -Argument "-ExecutionPolicy Bypass -File C:\ScheduledTasks\cleanup.ps1"
-        $trigger = New-ScheduledTaskTrigger -Daily -At "3:00AM"
-        $taskPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-        Register-ScheduledTask -TaskName "ORSUCleanup" -Action $action `
-            -Trigger $trigger -Principal $taskPrincipal -Force | Out-Null
-        Write-Host "    [+] Scheduled task: ORSUCleanup (SYSTEM, writable script)" -ForegroundColor Green
+        try {
+            if (-not (Test-Path "C:\ScheduledTasks")) {
+                New-Item -Path "C:\ScheduledTasks" -ItemType Directory -Force | Out-Null
+            }
+            "Write-Host 'Cleanup task running...'" | Out-File "C:\ScheduledTasks\cleanup.ps1" -Force -ErrorAction Stop
+            
+            if ($everyoneFileRule) {
+                $taskFileAcl = Get-Acl "C:\ScheduledTasks\cleanup.ps1"
+                $taskFileAcl.AddAccessRule($everyoneFileRule)
+                Set-Acl "C:\ScheduledTasks\cleanup.ps1" $taskFileAcl
+            }
+            
+            $action = New-ScheduledTaskAction -Execute "powershell.exe" `
+                -Argument "-ExecutionPolicy Bypass -File C:\ScheduledTasks\cleanup.ps1"
+            $trigger = New-ScheduledTaskTrigger -Daily -At "3:00AM"
+            $taskPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+            Register-ScheduledTask -TaskName "ORSUCleanup" -Action $action `
+                -Trigger $trigger -Principal $taskPrincipal -Force -ErrorAction Stop | Out-Null
+            Write-Host "    [+] Scheduled task: ORSUCleanup (SYSTEM, writable script)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure Scheduled Task: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # ---- 2/4: Lateral Movement ----
         Write-Host "`n[2/4] Configuring lateral movement..." -ForegroundColor Yellow
@@ -1547,86 +1871,144 @@ if ($Role -eq "WS") {
             Write-Host "    [!] PSRemoting failed: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
-        Set-Service -Name WinRM -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service -Name WinRM -ErrorAction SilentlyContinue
-        try { Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*" -Force -ErrorAction SilentlyContinue } catch {}
+        try {
+            Set-Service -Name WinRM -StartupType Automatic -ErrorAction Stop
+            Start-Service -Name WinRM -ErrorAction Stop
+            Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*" -Force -ErrorAction Stop | Out-Null
+            Write-Host "    [+] WinRM service started and TrustedHosts set" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] WinRM configuration warning: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # WMI
-        netsh advfirewall firewall set rule group="Windows Management Instrumentation (WMI)" new enable=yes 2>$null | Out-Null
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Ole" -Name "EnableDCOM" -Value "Y" -Force
-        Write-Host "    [+] WMI remote access enabled" -ForegroundColor Green
+        try {
+            netsh advfirewall firewall set rule group="Windows Management Instrumentation (WMI)" new enable=yes 2>$null | Out-Null
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Ole" -Name "EnableDCOM" -Value "Y" -Force -ErrorAction Stop
+            Write-Host "    [+] WMI remote access enabled" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] WMI configuration warning: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # RDP
-        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
-            -Name "fDenyTSConnections" -Value 0 -Force
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
-        Write-Host "    [+] RDP enabled" -ForegroundColor Green
+        try {
+            Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+                -Name "fDenyTSConnections" -Value 0 -Force -ErrorAction Stop
+            Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction Stop
+            Write-Host "    [+] RDP enabled" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] RDP configuration warning: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # Admin shares
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" `
-            -Name "AutoShareWks" -Value 1 -Type DWord -Force
-        Write-Host "    [+] Admin shares accessible" -ForegroundColor Green
+        try {
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" `
+                -Name "AutoShareWks" -Value 1 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] Admin shares accessible" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Admin shares warning: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # Disable remote UAC
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
-            -Name "LocalAccountTokenFilterPolicy" -Value 1 -Type DWord -Force
-        Write-Host "    [+] Remote UAC disabled (PtH works)" -ForegroundColor Green
+        try {
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
+                -Name "LocalAccountTokenFilterPolicy" -Value 1 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] Remote UAC disabled (PtH works)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Remote UAC warning: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # Local admin
-        $localPass = ConvertTo-SecureString "LabAdmin@2026!" -AsPlainText -Force
-        if (-not (Get-LocalUser -Name "operator" -ErrorAction SilentlyContinue)) {
-            try {
+        try {
+            $localPass = ConvertTo-SecureString "LabAdmin@2026!" -AsPlainText -Force
+            if (-not (Get-LocalUser -Name "operator" -ErrorAction SilentlyContinue)) {
                 New-LocalUser -Name "operator" -Password $localPass `
                     -PasswordNeverExpires -Description "Lab local admin" -ErrorAction Stop | Out-Null
                 Add-LocalGroupMember -Group "Administrators" -Member "operator" -ErrorAction Stop
                 Write-Host "    [+] Local admin: operator / LabAdmin@2026!" -ForegroundColor Green
-            } catch {
-                Write-Host "    [!] Failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            } else {
+                Write-Host "    [=] operator exists" -ForegroundColor DarkGray
             }
-        } else {
-            Write-Host "    [=] operator exists" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "    [!] Local admin creation warning: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # Credential exposure
-        $wdigestPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
-        if (-not (Test-Path $wdigestPath)) { New-Item -Path $wdigestPath -Force | Out-Null }
-        Set-ItemProperty -Path $wdigestPath -Name "UseLogonCredential" -Value 1 -Type DWord -Force
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "RunAsPPL" -Value 0 -Type DWord -Force
-        Write-Host "    [+] WDigest on, LSA Protection off" -ForegroundColor Green
+        try {
+            $wdigestPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
+            if (-not (Test-Path $wdigestPath)) { New-Item -Path $wdigestPath -Force | Out-Null }
+            Set-ItemProperty -Path $wdigestPath -Name "UseLogonCredential" -Value 1 -Type DWord -Force -ErrorAction Stop
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "RunAsPPL" -Value 0 -Type DWord -Force -ErrorAction Stop
+            Write-Host "    [+] WDigest on, LSA Protection off" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Credential exposure configuration warning: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # ---- 3/4: Persistence ----
         Write-Host "`n[3/4] Configuring persistence..." -ForegroundColor Yellow
 
-        $persistScript = "C:\Windows\Temp\persistence_demo.ps1"
-        "Write-Host 'Persistence demo running'" | Out-File $persistScript
+        try {
+            $persistScript = "C:\Windows\Temp\persistence_demo.ps1"
+            "Write-Host 'Persistence demo running'" | Out-File $persistScript -Force -ErrorAction Stop
+            Write-Host "    [+] Persistence script created" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to create persistence script: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" `
-            -Name "ORSUBankUpdater" `
-            -Value "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File $persistScript"
-        Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" `
-            -Name "ORSUBankSync" `
-            -Value "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File $persistScript"
-        Write-Host "    [+] Registry Run keys set" -ForegroundColor Green
+        try {
+            $persistScript = "C:\Windows\Temp\persistence_demo.ps1"
+            Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" `
+                -Name "ORSUBankUpdater" `
+                -Value "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File $persistScript" -Force -ErrorAction Stop
+            Write-Host "    [+] HKCU Run key set" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to set HKCU Run key: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
-        $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
-        "@echo off`npowershell -WindowStyle Hidden -Command `"Write-Host 'Startup demo'`"" | `
-            Out-File "$startupDir\ORSUStartup.bat" -Encoding ASCII
-        Write-Host "    [+] Startup folder: ORSUStartup.bat" -ForegroundColor Green
+        try {
+            $persistScript = "C:\Windows\Temp\persistence_demo.ps1"
+            Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" `
+                -Name "ORSUBankSync" `
+                -Value "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File $persistScript" -Force -ErrorAction Stop
+            Write-Host "    [+] HKLM Run key set" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to set HKLM Run key: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
-        $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" `
-            -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File $persistScript"
-        $startupTrigger = New-ScheduledTaskTrigger -AtStartup
-        $systemPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" `
-            -LogonType ServiceAccount -RunLevel Highest
-        Register-ScheduledTask -TaskName "ORSUStartupSync" -Action $taskAction `
-            -Trigger $startupTrigger -Principal $systemPrincipal -Force | Out-Null
-        Write-Host "    [+] Scheduled task: ORSUStartupSync (SYSTEM at boot)" -ForegroundColor Green
+        try {
+            $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+            if (-not (Test-Path $startupDir)) {
+                New-Item -Path $startupDir -ItemType Directory -Force | Out-Null
+            }
+            "@echo off`npowershell -WindowStyle Hidden -Command `"Write-Host 'Startup demo'`"" | `
+                Out-File "$startupDir\ORSUStartup.bat" -Encoding ASCII -Force -ErrorAction Stop
+            Write-Host "    [+] Startup folder: ORSUStartup.bat" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to set startup script: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
-        # Hidden service
-        Copy-Item "C:\Windows\System32\svchost.exe" "C:\Windows\Temp\ORSUHost.exe" -Force -ErrorAction SilentlyContinue
-        New-LabService -Name "ORSUHostService" `
-            -BinPath "C:\Windows\Temp\ORSUHost.exe -k netsvcs" `
-            -Description "ORSU Bank Network Services Host"
+        try {
+            $persistScript = "C:\Windows\Temp\persistence_demo.ps1"
+            $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+                -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File $persistScript"
+            $startupTrigger = New-ScheduledTaskTrigger -AtStartup
+            $systemPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" `
+                -LogonType ServiceAccount -RunLevel Highest
+            Register-ScheduledTask -TaskName "ORSUStartupSync" -Action $taskAction `
+                -Trigger $startupTrigger -Principal $systemPrincipal -Force -ErrorAction Stop | Out-Null
+            Write-Host "    [+] Scheduled task: ORSUStartupSync (SYSTEM at boot)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to register startup scheduled task: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
+        try {
+            Copy-Item "C:\Windows\System32\svchost.exe" "C:\Windows\Temp\ORSUHost.exe" -Force -ErrorAction Stop
+            New-LabService -Name "ORSUHostService" `
+                -BinPath "C:\Windows\Temp\ORSUHost.exe -k netsvcs" `
+                -Description "ORSU Bank Network Services Host"
+            Write-Host "    [+] Hidden service configured (ORSUHostService)" -ForegroundColor Green
+        } catch {
+            Write-Host "    [!] Failed to configure ORSUHostService: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         # WMI subscription
         try {
@@ -1659,37 +2041,57 @@ if ($Role -eq "WS") {
 
         # ---- 4/4: Coercion ----
         Write-Host "`n[4/4] Configuring coercion..." -ForegroundColor Yellow
-        $webClient = Get-Service -Name WebClient -ErrorAction SilentlyContinue
-        if ($webClient) {
-            Set-Service -Name WebClient -StartupType Automatic -ErrorAction SilentlyContinue
-            Start-Service -Name WebClient -ErrorAction SilentlyContinue
-            $wcStatus = (Get-Service WebClient).Status
-            if ($wcStatus -eq "Running") {
-                Write-Host "    [+] WebClient running" -ForegroundColor Green
+        try {
+            $webClient = Get-Service -Name WebClient -ErrorAction SilentlyContinue
+            if ($webClient) {
+                Set-Service -Name WebClient -StartupType Automatic -ErrorAction Stop
+                Start-Service -Name WebClient -ErrorAction Stop
+                $wcStatus = (Get-Service WebClient).Status
+                if ($wcStatus -eq "Running") {
+                    Write-Host "    [+] WebClient running" -ForegroundColor Green
+                } else {
+                    Write-Host "    [!] WebClient status: $wcStatus" -ForegroundColor Yellow
+                }
             } else {
-                Write-Host "    [!] WebClient status: $wcStatus" -ForegroundColor Yellow
+                Write-Host "    [!] WebClient not available" -ForegroundColor Yellow
             }
-        } else {
-            Write-Host "    [!] WebClient not available" -ForegroundColor Yellow
+        } catch {
+            Write-Host "    [!] Failed to configure WebClient service: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         # ---- VERIFICATION ----
         Write-Host "`n[*] Running verification checks..." -ForegroundColor Cyan
         $passed = 0; $failed = 0
 
-        if (Test-ServiceExists "ORSUUpdateService") { Write-Host "    [OK] ORSUUpdateService" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] ORSUUpdateService missing" -ForegroundColor Red; $failed++ }
+        try {
+            if (Test-ServiceExists "ORSUUpdateService") { Write-Host "    [OK] ORSUUpdateService" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] ORSUUpdateService missing" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] ORSUUpdateService check failed" -ForegroundColor Red; $failed++
+        }
 
-        if (Test-ServiceExists "VulnService") { Write-Host "    [OK] VulnService" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] VulnService missing" -ForegroundColor Red; $failed++ }
+        try {
+            if (Test-ServiceExists "VulnService") { Write-Host "    [OK] VulnService" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] VulnService missing" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] VulnService check failed" -ForegroundColor Red; $failed++
+        }
 
-        $aie = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
-        if ($aie -and $aie.AlwaysInstallElevated -eq 1) { Write-Host "    [OK] AlwaysInstallElevated" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] AlwaysInstallElevated not set" -ForegroundColor Red; $failed++ }
+        try {
+            $aie = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
+            if ($aie -and $aie.AlwaysInstallElevated -eq 1) { Write-Host "    [OK] AlwaysInstallElevated" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] AlwaysInstallElevated not set" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] AlwaysInstallElevated check failed" -ForegroundColor Red; $failed++
+        }
 
-        $winrmStatus = (Get-Service WinRM -ErrorAction SilentlyContinue).Status
-        if ($winrmStatus -eq "Running") { Write-Host "    [OK] WinRM running" -ForegroundColor Green; $passed++ }
-        else { Write-Host "    [FAIL] WinRM not running" -ForegroundColor Red; $failed++ }
+        try {
+            $winrmService = Get-Service WinRM -ErrorAction SilentlyContinue
+            if ($winrmService -and $winrmService.Status -eq "Running") { Write-Host "    [OK] WinRM running" -ForegroundColor Green; $passed++ }
+            else { Write-Host "    [FAIL] WinRM not running" -ForegroundColor Red; $failed++ }
+        } catch {
+            Write-Host "    [FAIL] WinRM service check failed" -ForegroundColor Red; $failed++
+        }
 
         Write-Host ""
         Write-Host "    Verification: $passed passed, $failed failed" -ForegroundColor $(if ($failed -eq 0) {"Green"} else {"Yellow"})
