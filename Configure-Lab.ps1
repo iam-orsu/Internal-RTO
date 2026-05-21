@@ -1631,11 +1631,13 @@ if ($Role -eq "WS") {
         # WMI subscription
         try {
             # Clean up old WMI objects if they exist from a previous run to avoid "already exists" errors
-            Get-CimInstance -Namespace "root\subscription" -ClassName "__EventFilter" -Filter "Name='ORSUFilter'" -ErrorAction SilentlyContinue | Remove-CimInstance -ErrorAction SilentlyContinue
-            Get-CimInstance -Namespace "root\subscription" -ClassName "CommandLineEventConsumer" -Filter "Name='ORSUConsumer'" -ErrorAction SilentlyContinue | Remove-CimInstance -ErrorAction SilentlyContinue
-            Get-CimInstance -Namespace "root\subscription" -ClassName "__FilterToConsumerBinding" -ErrorAction SilentlyContinue | 
+            Get-WmiObject -Namespace "root\subscription" -Class "__FilterToConsumerBinding" -ErrorAction SilentlyContinue | 
                 Where-Object { $_.Filter -match "ORSUFilter" -or $_.Consumer -match "ORSUConsumer" } | 
-                Remove-CimInstance -ErrorAction SilentlyContinue
+                Remove-WmiObject -ErrorAction SilentlyContinue
+            Get-WmiObject -Namespace "root\subscription" -Class "__EventFilter" -Filter "Name='ORSUFilter'" -ErrorAction SilentlyContinue | 
+                Remove-WmiObject -ErrorAction SilentlyContinue
+            Get-WmiObject -Namespace "root\subscription" -Class "CommandLineEventConsumer" -Filter "Name='ORSUConsumer'" -ErrorAction SilentlyContinue | 
+                Remove-WmiObject -ErrorAction SilentlyContinue
 
             $filter = Set-WmiInstance -Namespace "root\subscription" -Class "__EventFilter" -Arguments @{
                 Name = "ORSUFilter"
