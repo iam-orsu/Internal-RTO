@@ -1234,8 +1234,15 @@ if ($Role -eq "DC") {
             Start-Service W3SVC -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 5
 
-            $caServiceExists = [bool](Get-Service -Name CertSvc -ErrorAction SilentlyContinue)
-            if (-not $caServiceExists) {
+            $caConfigured = $false
+            if (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration") {
+                $subKeys = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration" -ErrorAction SilentlyContinue
+                if ($subKeys) {
+                    $caConfigured = $true
+                }
+            }
+
+            if (-not $caConfigured) {
                 Write-Host "    [*] CA Service not configured. Configuring Certificate Authority..." -ForegroundColor Gray
                 try {
                     Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
@@ -1257,6 +1264,11 @@ if ($Role -eq "DC") {
                 }
             } else {
                 Write-Host "    [=] Certificate Authority service already configured" -ForegroundColor DarkGray
+                $caService = Get-Service -Name CertSvc -ErrorAction SilentlyContinue
+                if ($caService -and $caService.Status -ne "Running") {
+                    Write-Host "    [*] Starting CA Service..." -ForegroundColor Gray
+                    Start-Service CertSvc -ErrorAction SilentlyContinue
+                }
             }
         } catch {
             Write-Host "    [!] ADCS configuration error: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -1330,6 +1342,18 @@ if ($Role -eq "DC") {
 
         # ESC8: Web Enrollment without SSL or EPA
         Write-Host "    [*] Configuring ESC8..." -ForegroundColor Gray
+
+        # Unlock IIS configurations globally to prevent lock/permission issues when changing settings in web.config
+        try {
+            $appcmd = "$env:SystemRoot\System32\inetsrv\appcmd.exe"
+            if (Test-Path $appcmd) {
+                Write-Host "    [*] Unlocking IIS configuration sections..." -ForegroundColor Gray
+                & $appcmd unlock config -section:system.webServer/security/authentication/windowsAuthentication -ErrorAction SilentlyContinue | Out-Null
+                & $appcmd unlock config -section:system.webServer/security/authentication/anonymousAuthentication -ErrorAction SilentlyContinue | Out-Null
+                & $appcmd unlock config -section:system.webServer/security/access -ErrorAction SilentlyContinue | Out-Null
+            }
+        } catch {}
+
         $esc8Configured = $false
         for ($i = 1; $i -le 3; $i++) {
             try {
