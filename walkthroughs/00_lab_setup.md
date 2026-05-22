@@ -682,11 +682,13 @@ ping -c 2 <WS_IP>
 # Test DNS resolution
 nslookup orsubank.local <DC_IP>
 
-# Test LDAP (should return domain info)
-ldapsearch -x -H ldap://<DC_IP> -b "DC=orsubank,DC=local" -s base "(objectClass=*)"
+# Test LDAP (requires authentication as Active Directory disables anonymous queries by default)
+# Note: Use single quotes (') around the password to prevent Bash from interpreting the exclamation mark (!) as a history expansion character
+ldapsearch -x -H ldap://<DC_IP> -D "vamsi.krishna@orsubank.local" -w 'OrsUBank2024!' -b "DC=orsubank,DC=local" -s base "(objectClass=*)"
 
 # Test SMB (should list shares)
 crackmapexec smb <DC_IP> -u "vamsi.krishna" -p "OrsUBank2024!" --shares
+
 ```
 
 ### From WS01, test domain membership:
