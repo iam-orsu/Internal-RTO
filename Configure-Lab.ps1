@@ -433,6 +433,27 @@ function New-LabService {
     }
 }
 
+function Stop-LabServiceIfRunning {
+    param([string]$Name)
+    if (Test-ServiceExists $Name) {
+        $svc = Get-Service -Name $Name -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq "Running") {
+            try {
+                Stop-Service -Name $Name -Force -ErrorAction SilentlyContinue
+                # Wait up to 5 seconds for it to stop
+                $timeout = 5
+                while ($timeout -gt 0) {
+                    $status = (Get-Service -Name $Name -ErrorAction SilentlyContinue).Status
+                    if ($status -eq "Stopped" -or $status -eq "StopPending") { break }
+                    Start-Sleep -Seconds 1
+                    $timeout--
+                }
+                Start-Sleep -Seconds 1 # Extra grace period for file handles to close
+            } catch {}
+        }
+    }
+}
+
 
 # ============================================================
 # HELPER: ACL management
@@ -510,8 +531,10 @@ function Add-LabGroupMember {
 
         $exists = $false
         if ($group.Member) {
+            $memberShort = ($memberDN -replace '^CN=', '').Split(',')[0]
             foreach ($m in $group.Member) {
-                if ($m -eq $memberDN -or $m.Split(',')[0] -eq $memberDN.Split(',')[0]) {
+                $mShort = ($m -replace '^CN=', '').Split(',')[0]
+                if ($m -eq $memberDN -or $mShort -eq $memberShort -or $mShort -eq $MemberIdentity) {
                     $exists = $true
                     break
                 }
@@ -1128,6 +1151,7 @@ if ($Role -eq "DC") {
         }
 
         # DCSync rights for WS01$
+        $ws01 = $null
         try {
             $ws01 = Get-ADComputer -Filter "Name -eq 'WS01'" -ErrorAction SilentlyContinue
             if ($ws01) {
@@ -1218,9 +1242,11 @@ if ($Role -eq "DC") {
         try { $domainUsersSID = (Get-ADGroup -Filter "Name -eq 'Domain Users'" | Select-Object -First 1).SID } catch {}
 
         try {
+            # Step 1: Install Windows features if not already installed
             $adcsFeature = Get-WindowsFeature ADCS-Cert-Authority
             if (-not $adcsFeature.Installed) {
                 Write-Host "    [*] Installing ADCS (takes a few minutes)..." -ForegroundColor Gray
+                # Install CA feature + Web-Windows-Auth now; ADCS-Web-Enrollment installed after CA is running
                 $result = Install-WindowsFeature ADCS-Cert-Authority, ADCS-Web-Enrollment, Web-Windows-Auth -IncludeManagementTools
                 if ($result.Success) {
                     Write-Host "    [+] ADCS features installed" -ForegroundColor Green
@@ -1231,62 +1257,125 @@ if ($Role -eq "DC") {
                 Write-Host "    [=] ADCS features already installed" -ForegroundColor DarkGray
             }
 
-            Start-Service W3SVC -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 5
-
+            # Step 2: Check if *any* CA is configured using the MS-verified registry subkeys method
             $caConfigured = $false
-            if (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration") {
-                $subKeys = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration" -ErrorAction SilentlyContinue
-                if ($subKeys) {
+            $caConfigKey = "HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration"
+            if (Test-Path $caConfigKey) {
+                $subkeys = (Get-Item $caConfigKey -ErrorAction SilentlyContinue).GetSubKeyNames()
+                if ($subkeys -and $subkeys.Count -gt 0) {
                     $caConfigured = $true
+                    $configuredCAName = $subkeys[0]
                 }
             }
 
             if (-not $caConfigured) {
-                Write-Host "    [*] CA Service not configured. Configuring Certificate Authority..." -ForegroundColor Gray
+                Write-Host "    [*] CA not configured. Configuring Enterprise Root CA..." -ForegroundColor Gray
                 try {
                     Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
                         -CACommonName "ORSUBANK-CA" -KeyLength 2048 `
                         -HashAlgorithmName SHA256 -ValidityPeriod Years `
-                        -ValidityPeriodUnits 10 -Force | Out-Null
+                        -ValidityPeriodUnits 10 -Force -ErrorAction Stop | Out-Null
                     Write-Host "    [+] Enterprise Root CA: ORSUBANK-CA configured" -ForegroundColor Green
                 } catch {
-                    Write-Host "    [!] CA config: $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Host "    [!] CA configuration failed: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
+            } else {
+                Write-Host "    [=] Certificate Authority already configured ($configuredCAName)" -ForegroundColor DarkGray
+            }
 
-                Start-Sleep -Seconds 3
+            # Step 3: Ensure CertSvc is running (required before Install-AdcsWebEnrollment)
+            # Per Microsoft docs, CertSvc starts automatically after configuration but must be verified
+            Write-Host "    [*] Waiting for CertSvc to start..." -ForegroundColor Gray
+            $certSvcReady = $false
+            for ($w = 1; $w -le 12; $w++) {
+                $svc = Get-Service -Name CertSvc -ErrorAction SilentlyContinue
+                if ($svc -and $svc.Status -eq "Running") {
+                    $certSvcReady = $true
+                    Write-Host "    [+] CertSvc is running" -ForegroundColor Green
+                    break
+                }
+                if ($svc -and $svc.Status -ne "Running") {
+                    Start-Service CertSvc -ErrorAction SilentlyContinue
+                }
+                Start-Sleep -Seconds 5
+            }
+            if (-not $certSvcReady) {
+                Write-Host "    [!] CertSvc did not start within 60s. CA may not function correctly." -ForegroundColor Yellow
+            }
 
+            # Step 4: Ensure W3SVC (IIS) is running
+            Start-Service W3SVC -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+
+            # Step 5: Configure Web Enrollment (must be AFTER CertSvc is running per Microsoft ordering requirements)
+            $webEnrollConfigured = $false
+            try {
+                Import-Module WebAdministration -ErrorAction SilentlyContinue
+                if (Get-Command Get-WebApplication -ErrorAction SilentlyContinue) {
+                    $webEnrollConfigured = [bool](Get-WebApplication -Name "certsrv" -ErrorAction SilentlyContinue)
+                }
+            } catch {}
+
+            if (-not $webEnrollConfigured) {
+                Write-Host "    [*] Configuring Web Enrollment (CertSrv)..." -ForegroundColor Gray
                 try {
-                    Install-AdcsWebEnrollment -Force | Out-Null
-                    Write-Host "    [+] Web Enrollment configured" -ForegroundColor Green
+                    Install-AdcsWebEnrollment -Force -ErrorAction Stop | Out-Null
+                    Write-Host "    [+] Web Enrollment configured (/CertSrv registered in IIS)" -ForegroundColor Green
+                    # IIS reset to ensure the virtual directory is fully registered
+                    & "$env:SystemRoot\System32\iisreset.exe" /noforce 2>$null | Out-Null
+                    Start-Sleep -Seconds 3
                 } catch {
                     Write-Host "    [!] Web Enrollment: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
             } else {
-                Write-Host "    [=] Certificate Authority service already configured" -ForegroundColor DarkGray
-                $caService = Get-Service -Name CertSvc -ErrorAction SilentlyContinue
-                if ($caService -and $caService.Status -ne "Running") {
-                    Write-Host "    [*] Starting CA Service..." -ForegroundColor Gray
-                    Start-Service CertSvc -ErrorAction SilentlyContinue
-                }
+                Write-Host "    [=] Web Enrollment (/CertSrv) already configured in IIS" -ForegroundColor DarkGray
             }
         } catch {
             Write-Host "    [!] ADCS configuration error: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
-        # ESC1: User template allows SAN
+        # Step 6: Wait for certificate templates to appear in AD Configuration partition
+        # After CA installation there is a replication delay before pKICertificateTemplate objects are visible
+        # Per MS docs: poll with retry loop rather than a fixed sleep
+        $templatesReady = $false
         if ($configNC) {
+            $templateContainerDN = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
+            Write-Host "    [*] Waiting for certificate templates to appear in AD..." -ForegroundColor Gray
+            for ($t = 1; $t -le 12; $t++) {
+                try {
+                    $templateContainer = Get-ADObject -Identity $templateContainerDN -ErrorAction Stop
+                    # Also verify at least the User template exists (most basic built-in template)
+                    $userTplCheck = Get-ADObject -Identity "CN=User,$templateContainerDN" -ErrorAction Stop
+                    if ($templateContainer -and $userTplCheck) {
+                        $templatesReady = $true
+                        Write-Host "    [+] Certificate templates available in AD (after ${t}x5s wait)" -ForegroundColor Green
+                        break
+                    }
+                } catch {
+                    Start-Sleep -Seconds 5
+                }
+            }
+            if (-not $templatesReady) {
+                Write-Host "    [!] Certificate templates not yet in AD after 60s. ESC1/ESC4 will be skipped." -ForegroundColor Yellow
+            }
+        }
+
+        # ESC1: User template allows SAN (CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT = 0x00000001)
+        if ($configNC -and $templatesReady) {
             Write-Host "    [*] Configuring ESC1..." -ForegroundColor Gray
             try {
                 $userTemplateDN = "CN=User,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
-                if (-not (Get-ADObject -Identity $userTemplateDN -ErrorAction SilentlyContinue)) {
-                    Write-Host "    [!] ESC1: User template not found." -ForegroundColor Yellow
+                $userTemplateObj = Get-ADObject -Identity $userTemplateDN -ErrorAction SilentlyContinue
+                if (-not $userTemplateObj) {
+                    Write-Host "    [!] ESC1: User template not found in AD." -ForegroundColor Yellow
                 } else {
-                    $templateObj = [ADSI]"LDAP://$userTemplateDN"
-                    $currentFlags = $templateObj.Properties["msPKI-Certificate-Name-Flag"].Value
-                    $newFlags = $currentFlags -bor 1
-                    $templateObj.Properties["msPKI-Certificate-Name-Flag"].Value = $newFlags
-                    $templateObj.CommitChanges()
+                    # Use ADSI Put()/SetInfo() - the correct MS-documented method
+                    # CommitChanges() is NOT correct; SetInfo() commits Put() staged changes
+                    $templateAdsi = [ADSI]"LDAP://$userTemplateDN"
+                    $currentFlags = [int]$templateAdsi.Properties["msPKI-Certificate-Name-Flag"].Value
+                    $newFlags = $currentFlags -bor 0x00000001   # CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT
+                    $templateAdsi.Put("msPKI-Certificate-Name-Flag", $newFlags)
+                    $templateAdsi.SetInfo()
 
                     if ($domainUsersSID) {
                         $enrollRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
@@ -1307,8 +1396,9 @@ if ($Role -eq "DC") {
             Write-Host "    [*] Configuring ESC4..." -ForegroundColor Gray
             try {
                 $webTemplateDN = "CN=WebServer,CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNC"
-                if (-not (Get-ADObject -Identity $webTemplateDN -ErrorAction SilentlyContinue)) {
-                    Write-Host "    [!] ESC4: WebServer template not found." -ForegroundColor Yellow
+                $webTemplateObj = Get-ADObject -Identity $webTemplateDN -ErrorAction SilentlyContinue
+                if (-not $webTemplateObj) {
+                    Write-Host "    [!] ESC4: WebServer template not found in AD." -ForegroundColor Yellow
                 } else {
                     if ($attackerUser) {
                         $writeRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
@@ -1336,21 +1426,25 @@ if ($Role -eq "DC") {
             } catch {
                 Write-Host "    [!] ESC4 error: $($_.Exception.Message)" -ForegroundColor Yellow
             }
+        } elseif (-not $templatesReady) {
+            Write-Host "    [!] ESC1/ESC4 skipped: certificate templates not yet visible in AD." -ForegroundColor Yellow
         } else {
             Write-Host "    [!] Could not read AD config. ESC1/ESC4 skipped." -ForegroundColor Yellow
         }
 
-        # ESC8: Web Enrollment without SSL or EPA
+        # ESC8: Web Enrollment without SSL or EPA (NTLM relay attack surface)
         Write-Host "    [*] Configuring ESC8..." -ForegroundColor Gray
 
-        # Unlock IIS configurations globally to prevent lock/permission issues when changing settings in web.config
+        # Unlock IIS configuration sections globally using correct appcmd /section: syntax (not -section:)
+        # Per Microsoft IIS documentation: appcmd unlock config /section:<sectionName>
+        # Note: appcmd.exe is a native Win32 binary; -ErrorAction SilentlyContinue is a PS param and does NOT apply
         try {
-            $appcmd = "$env:SystemRoot\System32\inetsrv\appcmd.exe"
-            if (Test-Path $appcmd) {
-                Write-Host "    [*] Unlocking IIS configuration sections..." -ForegroundColor Gray
-                & $appcmd unlock config -section:system.webServer/security/authentication/windowsAuthentication -ErrorAction SilentlyContinue | Out-Null
-                & $appcmd unlock config -section:system.webServer/security/authentication/anonymousAuthentication -ErrorAction SilentlyContinue | Out-Null
-                & $appcmd unlock config -section:system.webServer/security/access -ErrorAction SilentlyContinue | Out-Null
+            $appcmdPath = "$env:SystemRoot\System32\inetsrv\appcmd.exe"
+            if (Test-Path $appcmdPath) {
+                Write-Host "    [*] Unlocking IIS configuration sections via appcmd..." -ForegroundColor Gray
+                & $appcmdPath unlock config "/section:system.webServer/security/authentication/windowsAuthentication" 2>$null | Out-Null
+                & $appcmdPath unlock config "/section:system.webServer/security/authentication/anonymousAuthentication" 2>$null | Out-Null
+                & $appcmdPath unlock config "/section:system.webServer/security/access" 2>$null | Out-Null
             }
         } catch {}
 
@@ -1358,32 +1452,53 @@ if ($Role -eq "DC") {
         for ($i = 1; $i -le 3; $i++) {
             try {
                 Import-Module WebAdministration -ErrorAction Stop
-                # Check if the path exists in IIS configuration before attempting to set properties
-                if (Get-WebConfiguration -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' -filter "system.webServer/security/access" -ErrorAction SilentlyContinue) {
-                    Set-WebConfigurationProperty `
-                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
-                        -filter "system.webServer/security/access" `
-                        -name "sslFlags" -value "None" -ErrorAction Stop
-                    Set-WebConfigurationProperty `
-                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
-                        -filter "system.webServer/security/authentication/windowsAuthentication" `
-                        -name "extendedProtection.tokenChecking" -value "None" -ErrorAction Stop
-                    Set-WebConfigurationProperty `
-                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
-                        -filter "system.webServer/security/authentication/windowsAuthentication" `
-                        -name "enabled" -value $true -ErrorAction Stop
-                    Set-WebConfigurationProperty `
-                        -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/CertSrv' `
-                        -filter "system.webServer/security/authentication/anonymousAuthentication" `
-                        -name "enabled" -value $false -ErrorAction Stop
-                    Write-Host "    [+] ESC8: NTLM relay to Web Enrollment (no SSL, no EPA, NTLM forced)" -ForegroundColor Green
-                    $esc8Configured = $true
-                    break
-                } else {
-                    throw "IIS virtual directory /CertSrv not registered yet"
+
+                # Per MS docs: use Get-WebApplication to check if /CertSrv virtual directory exists
+                $certSrvApp = Get-WebApplication -Name "certsrv" -ErrorAction SilentlyContinue
+                if (-not $certSrvApp) {
+                    throw "IIS virtual directory /CertSrv not registered yet. Retry $i/3."
                 }
+
+                # Use -PSPath 'IIS:\' -Location 'Default Web Site/CertSrv' format (most reliable for locked sections)
+                # Per MS docs: this pattern handles sections locked in applicationHost.config correctly
+
+                # Disable SSL requirement (sslFlags = None = 0; 'Ssl' = 8 would require SSL)
+                Set-WebConfigurationProperty `
+                    -PSPath 'IIS:\' `
+                    -Location 'Default Web Site/CertSrv' `
+                    -Filter "system.webServer/security/access" `
+                    -Name "sslFlags" -Value "None" -ErrorAction Stop
+
+                # Disable Extended Protection (EPA) - tokenChecking must be set on the extendedProtection sub-element
+                # tokenChecking values: None=0, Allow=1, Require=2
+                Set-WebConfigurationProperty `
+                    -PSPath 'IIS:\' `
+                    -Location 'Default Web Site/CertSrv' `
+                    -Filter "system.webServer/security/authentication/windowsAuthentication/extendedProtection" `
+                    -Name "tokenChecking" -Value "None" -ErrorAction Stop
+
+                # Enable Windows Authentication (NTLM)
+                Set-WebConfigurationProperty `
+                    -PSPath 'IIS:\' `
+                    -Location 'Default Web Site/CertSrv' `
+                    -Filter "system.webServer/security/authentication/windowsAuthentication" `
+                    -Name "enabled" -Value $true -ErrorAction Stop
+
+                # Disable Anonymous Authentication
+                Set-WebConfigurationProperty `
+                    -PSPath 'IIS:\' `
+                    -Location 'Default Web Site/CertSrv' `
+                    -Filter "system.webServer/security/authentication/anonymousAuthentication" `
+                    -Name "enabled" -Value $false -ErrorAction Stop
+
+                # IIS reset applies config changes cleanly
+                & "$env:SystemRoot\System32\iisreset.exe" /noforce 2>$null | Out-Null
+
+                Write-Host "    [+] ESC8: NTLM relay to Web Enrollment (no SSL, no EPA, NTLM forced)" -ForegroundColor Green
+                $esc8Configured = $true
+                break
             } catch {
-                Write-Host "    [*] ESC8 configuration attempt $i failed: $($_.Exception.Message). Retrying in 5 seconds..." -ForegroundColor DarkGray
+                Write-Host "    [*] ESC8 attempt $i failed: $($_.Exception.Message). Retrying in 5s..." -ForegroundColor DarkGray
                 Start-Sleep -Seconds 5
             }
         }
@@ -1822,6 +1937,7 @@ if ($Role -eq "WS") {
 
         # Unquoted Service Path
         try {
+            Stop-LabServiceIfRunning "ORSUUpdateService"
             $vulnPath = "C:\Program Files\ORSU Bank\Update Service"
             if (-not (Test-Path $vulnPath)) {
                 New-Item -Path $vulnPath -ItemType Directory -Force | Out-Null
@@ -1860,6 +1976,7 @@ if ($Role -eq "WS") {
 
         # Weak Service Binary
         try {
+            Stop-LabServiceIfRunning "VulnService"
             $weakPath = "C:\Services\VulnService"
             if (-not (Test-Path $weakPath)) {
                 New-Item -Path $weakPath -ItemType Directory -Force | Out-Null
@@ -1884,6 +2001,7 @@ if ($Role -eq "WS") {
 
         # Weak Registry Permissions
         try {
+            Stop-LabServiceIfRunning "RegHijackService"
             Copy-Item "C:\Windows\System32\notepad.exe" "C:\Windows\Temp\regsvc.exe" -Force -ErrorAction Stop
             New-LabService -Name "RegHijackService" -BinPath "C:\Windows\Temp\regsvc.exe" `
                 -Description "Service with weak registry permissions"
@@ -2104,6 +2222,7 @@ if ($Role -eq "WS") {
         }
 
         try {
+            Stop-LabServiceIfRunning "ORSUHostService"
             Copy-Item "C:\Windows\System32\svchost.exe" "C:\Windows\Temp\ORSUHost.exe" -Force -ErrorAction Stop
             New-LabService -Name "ORSUHostService" `
                 -BinPath "C:\Windows\Temp\ORSUHost.exe -k netsvcs" `
