@@ -274,7 +274,15 @@ function Set-LabStaticIP {
             Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
     } catch {}
 
-    # Allow ICMP (ping) through firewall
+    # Disable Windows Defender Firewall on all profiles (Domain, Private, Public)
+    try {
+        Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled False -ErrorAction SilentlyContinue
+        Write-Host "    [+] Windows Defender Firewall disabled for all profiles" -ForegroundColor Green
+    } catch {
+        Write-Host "    [!] Failed to disable Windows Defender Firewall: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    # Allow ICMP (ping) through firewall (as backup if firewall is re-enabled)
     try {
         New-NetFirewallRule -DisplayName "Lab-ICMP" -Direction Inbound -Protocol ICMPv4 `
             -IcmpType 8 -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
