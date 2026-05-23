@@ -292,18 +292,21 @@ python3 -m http.server 8080
 
 **Step 2: Download and run it on Windows**
 
-1. On the Windows VM, open Edge
-2. Go to `http://192.168.85.129:8080/hello.exe` (Kali)
-3. The file downloads
-4. Open File Explorer and navigate to Downloads
-5. Double-click `hello.exe`
+> **Important gotcha about Edge vs. Third-Party Browsers (like Firefox):**
+> 
+> * **If using Microsoft Edge:** Edge is deeply integrated with Windows SmartScreen. When you download `hello.exe`, Edge will show a browser-level warning (*"hello.exe isn't commonly downloaded"*). If you click **"See more" ➔ "Keep" ➔ "Keep anyway"**, you have explicitly pre-cleared the file. Because you bypassed the warning inside the browser, the OS remembers your consent and will **NOT** show the blue SmartScreen popup when you double-click the file in File Explorer!
+> * **If using Firefox:** Firefox does not pre-clear the file with the Windows OS. When you download the file in Firefox and double-click it in File Explorer, you will get the full, classic blue **"Windows protected your PC"** SmartScreen warning.
+>
+> We recommend downloading the file via **Firefox** for this lab so you can observe the OS-level SmartScreen warning directly.
 
-**What you should see:** A blue SmartScreen warning: "Windows protected your PC"
+1. On the Windows VM, open **Firefox** (or Edge if you just want to observe the browser-level block).
+2. Go to `http://192.168.85.129:8080/hello.exe` (Kali).
+3. The file downloads.
+4. Open File Explorer and navigate to your `Downloads` folder.
+5. Double-click `hello.exe`.
+6. You should see the blue SmartScreen warning: **"Windows protected your PC"** (if downloaded via Firefox or if you didn't pre-clear it in Edge). Click **"More info"** and then **"Run anyway"** to allow execution for this lab.
 
-This happens because:
-- The file has MOTW (downloaded from the internet via Edge)
-- The file is unsigned (no code-signing certificate)
-- SmartScreen has never seen this file before (unknown reputation)
+> **Console Application Note:** When you double-click `hello.exe`, a Command Prompt window will open and close instantly. This is normal because it is a console application that prints its text and immediately exits. To see the output, open PowerShell, navigate to your Downloads folder (`cd ~\Downloads`), and run the executable manually: `.\hello.exe`.
 
 **Step 3: Check what Sysmon logged**
 
